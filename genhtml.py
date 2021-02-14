@@ -247,7 +247,7 @@ on 64-bit values, and memory operations may use up to four contiguous 16 or
 <p>
 A number of physical registers are allocated to each SIMD-group, and registers
 from <code>r0</code> to <code>r(N-1)</code> may be used, but accesses to higher
-register numbers is not valid, and may access or corrupt data from other
+register numbers are not valid, and may read or corrupt data from other
 SIMD-groups. Using fewer registers (e.g. by using 16-bit types instead of
 32-bit types) allows more SIMD-groups to fit in the physical register file
 (higher occupancy), which improves performance.
@@ -289,32 +289,36 @@ The execution mask stack instructions (<code>pop_exec</code>, <code>if_*cmp</cod
 <code>r0l</code>, and are the only known way to manipulate <code>exec_mask</code>.
 However, <code>r0l</code> may be manipulated with other instructions. It should
 be initialised to zero prior to using execution mask stack instructions, and
-<code>break</code> statements may be implemented by conditionally moving the
-a value to <code>r0l</code> and using a <code>pop_exec 0</code>.
+<code>break</code> statements may be implemented by conditionally moving
+a value (corresponding to the number of stack-levels to break out of) to
+<code>r0l</code> and using a <code>pop_exec 0</code> (which deactivates any
+threads that now have non-zero values in <code>r0l</code>).
 </p>
 
 <p>
-The <code>jmp_exec_none</code> instruction may be used to jump over a loop body if
-no threads are active, and the <code>jmp_exec_any</code> may be used to jump back
-to the start of the loop only if one or more threads are still executing the loop.
+The <code>jmp_exec_none</code> instruction may be used to jump over an <code>if</code>
+statement body if no threads are active, and the <code>jmp_exec_any</code> may be used
+to jump back to the start of the loop only if one or more threads are still executing
+the loop.
 </p>
 
 <p>
 Execution masking generally prevents reading or writing values from inactive threads,
 however SIMD shuffle instructions can read from inactive threads in some cases, which
-can be valuable for observing non-zero values in <code>r0l</code>.
+can be valuable for research or debugging purposes (e.g. it allows observing non-zero
+values in <code>r0l</code>).
 </p>
 
 <h2>Register Cache</h2>
 
-<p>The GPU has a register cache, which keeps the contents of a number of general
-purpose registers more easily accessible. When instructions read or write GPRs,
-they often allow hints for the access to be encoded. The <code>cache</code> hint,
+<p>The GPU has a register cache, which keeps the contents of recently used general
+purpose registers more quickly accessible. When instructions read or write GPRs,
+they usually allow hints for the access to be encoded. The <code>cache</code> hint,
 on a source or destination operand, indicates the value will be used again,
-and should be cached (meaning other values, where this hint was not used will
+and should be cached (meaning other values, where this hint was not used, will
 be preferred for eviction). The <code>discard</code> hint (on a source operand)
-invalidates the value in the register cache (after all operands have been read)
-at the end of the instruction, without writing it back to the register file.</p>
+invalidates the value in the register cache after all operands have been read,
+without writing it back to the register file.</p>
 
 <p>While the <code>cache</code> hint should only change performance, the
 <code>discard</code> hint will make future reads undefined, which could

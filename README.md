@@ -35,7 +35,7 @@ $ python3 assemble.py 'fmul $r1, r2.discard, 0.5 ; rcp r1, r1.discard'
 
 ## Emulator
 
-Emulator is not a standalone tool, nor a final API, and so far has only been used for testing the logic of instructions against hardware. There's flow control yet, but if you want to use it, it looks something like:
+Emulator is not a standalone tool, nor a final API, and so far has only been used for testing the logic of instructions against hardware. There's no flow control yet, but if you want to use it, it looks something like:
 
 ```
 cs = applegpu.CoreState()
@@ -53,7 +53,7 @@ while remaining:
 # use cs.get_reg32/cs.get_reg16 to dump core state
 ```
 
-The plan is to get the hardware testing code to a stable state.
+The plan is to get the hardware testing code to a usable state and add it to this repository.
 
 
 ## Documentation
