@@ -1,0 +1,7 @@
+hwtestbed/*.bin
+hwtestbed/*.air
+hwtestbed/*.metallib
+hwtestbed/*.dylib
+hwtestbed/main
+hwtestbed/cache
+.DS_Store

@@ -53,8 +53,23 @@ while remaining:
 # use cs.get_reg32/cs.get_reg16 to dump core state
 ```
 
-The plan is to get the hardware testing code to a usable state and add it to this repository.
+However, it is used in the hardware tests.
 
+## Hardware tests
+
+Hardware tests run instructions on the actual GPU (so can only run on Apple Silicon), and emulate them, and compare state afterwards. This is acheived using a modified version of Alyssa Rosenzweig's wrap.dylib from https://github.com/AsahiLinux/gpu
+
+To build the testbed: `cd hwtestbed && make`
+
+To run the tests: `python3 hwtest.py`
+
+This will take ages, but builds a cache in `hwtestbed/cache` allowing future runs to be a bit faster. I generally comment out what I'm not working on. The disk is used extensively to communicate between python and the injected dylib - this could be fixed. It's probably not the worst culprit, but I wouldn't run the tests if you're trying to avoid hammering your disk (https://twitter.com/marcan42/status/1361160838854316032)
+
+With a bit of work it should be possible to test much better and much more quickly (i.e. explicitly test cases that actually matter, rather than iterating through every combination we think might do something that might matter).
+
+Hardware testing is great because it's hard to mess up, quick to add new tests, and we have tests. Most other things about it are currently not great. The tests are a bit scattershot - some tests are thorough, but others only test what had to be work to implement other tests. It can be hard to see what's covered, so I've found it useful to experimentally break things to see if they're being covered by the tests or not.
+
+Also, there's also no cache invalidation, there are hardcode offsets, there's tons of dead code, and I'm generally afraid to modify the code in hwtestbed because any changes to how it configures the GPU might break all the tests, and it'd be painful to rebuild my cache to make sure it's all still working. `main.mm` and `compute.metal` were written with this in mind, and should be flexible enough to allow uniform register tests and device memory tests to be added.
 
 ## Documentation
 
