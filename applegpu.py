@@ -1936,8 +1936,10 @@ class ExReg32Desc(OperandDesc):
 
 
 instruction_descriptors = []
-
+_instruction_descriptor_names = set()
 def register(cls):
+	assert cls.__name__ not in _instruction_descriptor_names, 'duplicate %r' % (cls.__name__,)
+	_instruction_descriptor_names.add(cls.__name__)
 	instruction_descriptors.append(cls())
 	return cls
 
@@ -2529,7 +2531,7 @@ class ArithmeticShiftRightInstructionDesc(BaseShiftInstructionDesc):
 		self.operands['D'].set_thread(fields, corestate, thread, result)
 
 @register
-class ArithmeticShiftRightInstructionDesc(BaseShiftInstructionDesc):
+class ArithmeticShiftRightHighInstructionDesc(BaseShiftInstructionDesc):
 	documentation_name = 'Arithmetic Shift Right High'
 
 	def __init__(self):
@@ -4350,26 +4352,26 @@ class TextureLoadInstructionDesc(InstructionDesc):
 		self.add_constant(0, 8, 0x71)
 
 @register
-class TextureLoadInstructionDesc(InstructionDesc):
+class TextureSampleInstructionDesc(InstructionDesc):
 	documentation_html = '<p>The last four bytes are omitted if L=0.</p>'
 	def __init__(self):
 		super().__init__('texture_sample', size=(8, 12))
 		self.add_constant(0, 8, 0x31)
 
 @register
-class TextureLoadInstructionDesc(InstructionDesc):
+class ThreadgroupBarriernstructionDesc(InstructionDesc):
 	def __init__(self):
 		super().__init__('threadgroup_barrier', size=2)
 		self.add_constant(0, 8, 0x68)
 
 @register
-class TextureLoadInstructionDesc(InstructionDesc):
+class UnknownAfterSampling1InstructionDesc(InstructionDesc):
 	def __init__(self):
 		super().__init__('TODO.after_sampling1', size=2)
 		self.add_constant(0, 16, 0x101C)
 
 @register
-class TextureLoadInstructionDesc(InstructionDesc):
+class UnknownAfterSampling2InstructionDesc(InstructionDesc):
 	def __init__(self):
 		super().__init__('TODO.after_sampling2', size=2)
 		self.add_constant(0, 16, 0x62CC)
