@@ -3,7 +3,7 @@ import subprocess
 import hashlib
 import os
 import applegpu
-
+import assemble
 # TODO: this could be vastly improved by using the assembler for things
 
 # TODO: many of these tests miss edge cases - it'd be great to do floating
@@ -23,7 +23,7 @@ if not os.path.exists('cache'):
 def mov_imm(reg, value):
 	return b'\x62' + struct.pack('<BI', reg << 2 | 1, value)
 
-def test(test_opcodes, state=None, n=32):
+def test(test_opcodes, state=None, n=32, extra_data=b''):
 	# load r0-r3 from in0.bin
 	# load r4-r7 from in1.bin
 	# r8 = thread position in grid
@@ -56,7 +56,10 @@ def test(test_opcodes, state=None, n=32):
 
 	assert len(code) <= 1024
 
-	key = repr((code, n, sz, state))
+	if extra_data != b'':
+		key = repr((code, n, sz, state, extra_data))
+	else:
+		key = repr((code, n, sz, state))
 	cache_path = 'cache/' + hashlib.sha224(key.encode('utf-8')).hexdigest()
 	if CACHE_ENABLED and os.path.exists(cache_path):
 		with open(cache_path, 'r') as f:
@@ -71,6 +74,7 @@ def test(test_opcodes, state=None, n=32):
 					for j in range(4):
 						f0.write(struct.pack('<I', state[j][i]))
 						f1.write(struct.pack('<I', state[4+j][i]))
+				f0.write(extra_data)
 
 		r = subprocess.check_output("DYLD_INSERT_LIBRARIES='./replacer.dylib' ./main %d %d in0.bin in1.bin" % (n, sz), shell=True)
 		r = r.decode('utf-8')
@@ -112,12 +116,21 @@ RANDOM_INITIAL_STATE = [
 	[0x8993daef, 0xa13aa4e4, 0x42415833, 0x44d8451f, 0x68eaeeb0, 0x285ff866, 0x0a976bc1, 0xdfbc0f57, 0xabf29785, 0x4c9ddf17, 0xfdd8b8bb, 0xcd15ec3e, 0xc007ec69, 0xba14bf2b, 0x5847b51a, 0x596f041f, 0x0af218fd, 0x6e1e75b4, 0x001639cb, 0x51c0c43a, 0x4c309c03, 0x96a2e740, 0xaba775f9, 0xd62150ac, 0x61d48cd9, 0x718a31b7, 0x9ba190b4, 0x5376eea9, 0x9a8c75a8, 0x70ab10dd, 0x72165574, 0xde330fa0],
 ]
 
-def run_test(instructions, state):
-	cs = applegpu.CoreState()
+TEST_ADDRESS = 0x55FF000000
+
+def run_test(instructions, state, device_memory=None, extra_data=b''):
+	uniforms = applegpu.Uniforms()
+	uniforms.set_reg64(0, TEST_ADDRESS)
+	# threads per grid
+	uniforms.set_reg32(20, 32)
+	uniforms.set_reg32(21, 1)
+	uniforms.set_reg32(22, 1)
+	cs = applegpu.CoreState(uniforms=uniforms, device_memory=device_memory)
+
 
 	cs_set(cs, state)
 
-	result = test(instructions, state=core_state_to_state(cs))
+	result = test(instructions, state=core_state_to_state(cs), extra_data=extra_data)
 
 	remaining = instructions
 	while remaining:
@@ -577,7 +590,205 @@ def test_ffs():
 				code += desc.to_bytes(n)
 				run_test(code, initial_state)
 
+def test_uniforms():
+	# barely a test, but oh well
+
+	# threads_per_grid constants at u20,u21,u22
+	code = b''.join(assemble.assemble_line('bitop_mov r%d, u%d' % (i, i+20)) for i in range(3))
+	run_test(code, RANDOM_INITIAL_STATE)
+
+	code = b''.join(assemble.assemble_line('bitop_mov r%dh, u%dl' % (i, i+20)) for i in range(3))
+	run_test(code, RANDOM_INITIAL_STATE)
+
+def test_sr80():
+	run_test(assemble.assemble_line('get_sr r0, sr80'), RANDOM_INITIAL_STATE)
+
+def test_memory():
+	# TODO: document what each of these are testing
+	extra_data = bytes(range(256))*2
+
+	tests = [1, 0x3F, 0x40, 0x41, 0x1F << 6, (0x1F << 6) | 1, (0x1E << 6) | 1, (0x1E << 6) | 0x3F]
+	tests += [i << 22 for i in [1, 0x1F, 0x20, 0x21, 0x1F << 5, (0x1F << 5) | 1, (0x1E << 5) | 1, (0x1E << 5) | 0x1F]]
+	float_tests = struct.pack('<' + 'I' * len(tests), *tests)
+
+	for j in range(16):
+		for i in [13]:
+			for shift in range(4):
+				for out in ['r3_r4_r5_r6', 'r3l_r3h_r4l_r4h']:
+					code = b''
+					# buffer address
+					code += assemble.assemble_line('bitop_mov r0, u0')
+					code += assemble.assemble_line('bitop_mov r1, u1')
+					code += assemble.assemble_line('mov r2, 512')
+					code += assemble.assemble_line('iadd r0_r1, r0_r1, r2')
+
+					code += assemble.assemble_line('get_sr r2, sr80')
+
+					code += assemble.assemble_line('device_load 1, 0, 0, 4, 0, ' + str(i) + ', '+str(j)+', '+out+', r0_r1, r2, unsigned, lsl ' + str(shift))
+
+					code += assemble.assemble_line('wait 0')
+
+					code += assemble.assemble_line('mov r0, 0')
+					code += assemble.assemble_line('mov r1, 0')
+
+					device_memory = applegpu.AddressSpace()
+
+					device_memory.map(TEST_ADDRESS, 1024)
+					for x, v in enumerate(extra_data):
+						device_memory.set_byte(TEST_ADDRESS + 512 + x, v)
+
+					run_test(code, RANDOM_INITIAL_STATE, device_memory=device_memory, extra_data=extra_data)
+
+	for j in range(16):
+		for i in [12]:
+			for shift in range(4):
+				for out in ['r3_r4_r5_r6']: # TODO: 'r3l_r3h_r4l_r4h' doesn't work yet
+					code = b''
+					code += assemble.assemble_line('bitop_mov r0, u0')
+					code += assemble.assemble_line('bitop_mov r1, u1')
+					code += assemble.assemble_line('mov r2, 512')
+					code += assemble.assemble_line('iadd r0_r1, r0_r1, r2')
+
+					code += assemble.assemble_line('get_sr r2, sr80')
+
+					code += assemble.assemble_line('device_load 1, 0, 0, 4, 0, ' + str(i) + ', '+str(j)+', '+out+', r0_r1, r2, unsigned, lsl ' + str(shift))
+
+					code += assemble.assemble_line('wait 0')
+
+					code += assemble.assemble_line('mov r0, 0')
+					code += assemble.assemble_line('mov r1, 0')
+
+					device_memory = applegpu.AddressSpace()
+
+					device_memory.map(TEST_ADDRESS, 1024)
+					for x, v in enumerate(extra_data):
+						device_memory.set_byte(TEST_ADDRESS + 512 + x, v)
+
+					run_test(code, RANDOM_INITIAL_STATE, device_memory=device_memory, extra_data=extra_data)
+
+					device_memory = applegpu.AddressSpace()
+
+					device_memory.map(TEST_ADDRESS, 1024)
+					for x, v in enumerate(float_tests):
+						device_memory.set_byte(TEST_ADDRESS + 512 + x, v)
+					run_test(code, RANDOM_INITIAL_STATE, device_memory=device_memory, extra_data=float_tests)
+
+	for j in range(16):
+		for i in [8, 10]: # srgb
+			for shift in range(4):
+				for out in ['r3_r4_r5_r6', 'r3l_r3h_r4l_r4h']:
+					code = b''
+					# buffer address
+					code += assemble.assemble_line('bitop_mov r0, u0')
+					code += assemble.assemble_line('bitop_mov r1, u1')
+					code += assemble.assemble_line('mov r2, 512')
+					code += assemble.assemble_line('iadd r0_r1, r0_r1, r2')
+
+					code += assemble.assemble_line('get_sr r2, sr80')
+
+					code += assemble.assemble_line('device_load 1, 0, 0, 4, 0, ' + str(i) + ', '+str(j)+', '+out+', r0_r1, r2, unsigned, lsl ' + str(shift))
+
+					code += assemble.assemble_line('wait 0')
+
+					code += assemble.assemble_line('mov r0, 0')
+					code += assemble.assemble_line('mov r1, 0')
+
+					device_memory = applegpu.AddressSpace()
+
+					device_memory.map(TEST_ADDRESS, 1024)
+					for x, v in enumerate(extra_data):
+						device_memory.set_byte(TEST_ADDRESS + 512 + x, v)
+
+					run_test(code, RANDOM_INITIAL_STATE, device_memory=device_memory, extra_data=extra_data)
+
+	for i in [8]:
+		code = b''
+		# buffer address
+		code += assemble.assemble_line('bitop_mov r0, u0')
+		code += assemble.assemble_line('bitop_mov r1, u1')
+		code += assemble.assemble_line('mov r2, 513')
+		code += assemble.assemble_line('iadd r0_r1, r0_r1, r2')
+
+		code += assemble.assemble_line('get_sr r2, sr80')
+
+		code += assemble.assemble_line('device_load 1, 0, 0, 4, 0, ' + str(i) + ', 15, r3_r4_r5_r6, r0_r1, r2, unsigned, lsl 1')
+		code += assemble.assemble_line('wait 0')
+
+		code += assemble.assemble_line('mov r0, 0')
+		code += assemble.assemble_line('mov r1, 0')
+		device_memory = applegpu.AddressSpace()
+
+		device_memory.map(TEST_ADDRESS, 1024)
+		for i, v in enumerate(extra_data):
+			device_memory.set_byte(TEST_ADDRESS + 512 + i, v)
+
+		run_test(code, RANDOM_INITIAL_STATE, device_memory=device_memory, extra_data=extra_data)
+
+	# test for how mask works
+	for i in range(16):
+		code = b''
+		# buffer address
+		code += assemble.assemble_line('bitop_mov r0, u0')
+		code += assemble.assemble_line('bitop_mov r1, u1')
+		code += assemble.assemble_line('mov r2, 512')
+		code += assemble.assemble_line('iadd r0_r1, r0_r1, r2')
+
+		code += assemble.assemble_line('get_sr r4, sr80')
+
+		code += assemble.assemble_line('device_load 1, 0, 0, 4, 0, i8, '+str(i)+', r3_r4, r0_r1, r4, unsigned, lsl 0')
+
+		code += assemble.assemble_line('wait 0')
+
+
+		code += assemble.assemble_line('mov r0, 0')
+		code += assemble.assemble_line('mov r1, 0')
+		device_memory = applegpu.AddressSpace()
+
+		device_memory.map(TEST_ADDRESS, 1024)
+		for i, v in enumerate(extra_data):
+			device_memory.set_byte(TEST_ADDRESS + 512 + i, v)
+
+		run_test(code, RANDOM_INITIAL_STATE, device_memory=device_memory, extra_data=extra_data)
+
+	# basic types
+	for i in range(8):
+		code = b''
+		# buffer address
+		code += assemble.assemble_line('bitop_mov r1, u0')
+		code += assemble.assemble_line('bitop_mov r2, u1')
+		code += assemble.assemble_line('mov r3, ' + str(512)) # + 7 + 115))
+		code += assemble.assemble_line('iadd r1_r2, r1_r2, r3')
+
+		code += assemble.assemble_line('get_sr r3, sr80')
+
+		code += assemble.assemble_line('device_load 1, 0, 0, 4, 0, ' + str(i) + ', 3, r5_r6, r1_r2, r3, unsigned, lsl 0')
+		if i != 2:
+			code += assemble.assemble_line('device_load 1, 0, 0, 4, 0, ' + str(i) + ', 3, r0l_r0h, r1_r2, r3, unsigned, lsl 0')
+
+		code += assemble.assemble_line('wait 0')
+
+
+		code += assemble.assemble_line('mov r1, 0')
+		code += assemble.assemble_line('mov r2, 0')
+		device_memory = applegpu.AddressSpace()
+
+		device_memory.map(TEST_ADDRESS, 1024)
+		for i, v in enumerate(extra_data):
+			device_memory.set_byte(TEST_ADDRESS + 512 + i, v)
+
+		run_test(code, RANDOM_INITIAL_STATE, device_memory=device_memory, extra_data=extra_data)
+
+
 def main():
+	print('test_memory()')
+	test_memory()
+
+	print('test_uniforms()')
+	test_uniforms()
+
+	print('test_sr80()')
+	test_sr80()
+
 	print('test_bitop()')
 	test_bitop()
 	

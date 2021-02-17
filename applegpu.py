@@ -1,6 +1,8 @@
 import fma
 
-MAX_OPCODE_LEN = 10
+from srgb import SRGB_TABLE
+
+MAX_OPCODE_LEN = 12
 
 ABS_FLAG = 'abs'
 NEGATE_FLAG = 'neg'
@@ -200,6 +202,9 @@ class UReg16(BaseUReg):
 	def __repr__(self):
 		return self._repr('UReg16')
 
+	def get_thread(self, corestate, thread):
+		return corestate.uniforms.get_reg16(self.n)
+
 	def get_bit_size(self):
 		return 16
 
@@ -210,6 +215,9 @@ class UReg32(BaseUReg):
 	def __repr__(self):
 		return self._repr('UReg32')
 
+	def get_thread(self, corestate, thread):
+		return corestate.uniforms.get_reg32(self.n)
+
 	def get_bit_size(self):
 		return 32
 
@@ -219,6 +227,9 @@ class UReg64(BaseUReg):
 
 	def __repr__(self):
 		return self._repr('UReg64')
+
+	def get_thread(self, corestate, thread):
+		return corestate.uniforms.get_reg64(self.n)
 
 	def get_bit_size(self):
 		return 64
@@ -310,11 +321,63 @@ class AsmInstruction:
 	def __repr__(self):
 		return 'AsmInstruction(%r, %r)' % (self.mnem, self.operands)
 
+class AddressSpace:
+	def __init__(self):
+		self.mappings = []
+
+	def map(self, address, size):
+		# TODO: check for overlap
+		self.mappings.append((address, [0] * size))
+
+	def set_byte(self, address, value):
+		for start, values in self.mappings:
+			if start < address and address - start < len(values):
+				values[address - start] = value
+				return
+		assert False, 'bad address %x' % address
+
+	def get_byte(self, address):
+		for start, values in self.mappings:
+			if start < address and address - start < len(values):
+				return values[address - start]
+		assert False, 'bad address %x' % address
+
+	def get_u16(self, address):
+		return self.get_byte(address) | (self.get_byte(address + 1) << 8)
+
+	def get_u32(self, address):
+		return self.get_u16(address) | (self.get_u16(address + 2) << 16)
+
+class Uniforms:
+	def __init__(self):
+		self.reg16s = [0] * 256
+
+	def get_reg16(self, regid):
+		return self.reg16s[regid]
+
+	def set_reg32(self, regid, value):
+		self.reg16s[regid * 2] = value & 0xFFFF
+		self.reg16s[regid * 2 + 1] = (value >> 16) & 0xFFFF
+
+	def get_reg32(self, regid):
+		return self.reg16s[regid * 2] | (self.reg16s[regid * 2 + 1] << 16)
+
+	def get_reg64(self, regid):
+		return self.get_reg32(regid) | (self.get_reg32(regid + 1) << 32)
+
+	def set_reg64(self, regid, value):
+		self.set_reg32(regid, value & 0xFFFFFFFF)
+		self.set_reg32(regid + 1, (value >> 32) & 0xFFFFFFFF)
+
 class CoreState:
-	def __init__(self, num_registers=8):
+	def __init__(self, num_registers=8, uniforms=None, device_memory=None):
 		self.reg16s = [[0] * SIMD_WIDTH for i in range(num_registers * 2)]
 		self.pc = 0
 		self.exec = [True] * SIMD_WIDTH
+		if uniforms is None:
+			uniforms = Uniforms()
+		self.uniforms = uniforms
+		self.device_memory = device_memory
 
 	def get_reg16(self, regid, thread):
 		return self.reg16s[regid][thread]
@@ -1219,10 +1282,18 @@ class TruthTableDesc(OperandDesc):
 			fields['tt' + str(i)] = int(opstr[i])
 
 class FieldDesc(OperandDesc):
-	def __init__(self, name, start, size):
+	def __init__(self, name, x, size=None):
 		super().__init__(name)
-		self.size = size
-		self.add_field(start, size, self.name)
+		if isinstance(x, list):
+			subfields = x
+			self.size = sum(size for start, size, name in subfields)
+			self.add_merged_field(self.name, subfields)
+		else:
+			start = x
+			assert isinstance(start, int)
+			assert isinstance(size, int)
+			self.size = size
+			self.add_field(start, size, self.name)
 
 class IntegerFieldDesc(FieldDesc):
 	documentation_skip = True # (because it is what it is)
@@ -1283,6 +1354,12 @@ class EnumDesc(FieldDesc):
 			if v == opstr:
 				fields[self.name] = k
 				return
+
+		v = try_parse_integer(opstr)
+		if v is not None:
+			fields[self.name] = v
+			return
+
 		raise Exception('invalid enum %r (%r)' % (opstr, list(self.values.values())))
 
 class ShiftDesc(OperandDesc):
@@ -1514,16 +1591,14 @@ class FConditionDesc(BaseConditionDesc):
 
 
 class MemoryShiftDesc(OperandDesc):
-	documentation_no_name = True
+	documentation_skip = True
 
 	def __init__(self, name):
 		super().__init__(name)
-		self.add_field(42, 2, self.name + 'l')
-		#self.add_field(25, 1, self.name + 'h')
+		self.add_field(42, 2, self.name)
 
 	def decode(self, fields):
-		#shift = (fields[self.name + 'h'] << 2) | fields[self.name + 'l']
-		shift = fields[self.name + 'l']
+		shift = fields[self.name]
 		return 'lsl %d' % (shift) if shift else ''
 
 	def encode_string(self, fields, opstr):
@@ -1535,7 +1610,7 @@ class MemoryShiftDesc(OperandDesc):
 				raise Exception('invalid MemoryShiftDesc %r' % (opstr,))
 		else:
 			raise Exception('invalid MemoryShiftDesc %r' % (opstr,))
-		fields[self.name + 'l'] = s
+		fields[self.name] = s
 
 
 @document_operand
@@ -1587,7 +1662,56 @@ class MemoryIndexDesc(OperandDesc):
 			fields[self.name] = v
 			return
 
-		raise Exception('invalid MemoryBaseDesc %r' % (opstr,))
+		raise Exception('invalid MemoryIndexDesc %r' % (opstr,))
+
+#@document_operand
+class ThreadgroupIndexDesc(OperandDesc):
+#	pseudocode = '''
+#	{name}(value, flags):
+#		if flags != 0:
+#			return BroadcastImmediateReference(sign_extend(value, 16))
+#		else:
+#			if value & 1: UNDEFINED()
+#			if value >= 0x100: UNDEFINED()
+#			return Reg32Reference(value >> 1)
+#	'''
+
+	def __init__(self, name):
+		super().__init__(name)
+		self.add_merged_field(self.name, [
+			(28, 6, self.name),
+			(48, 10, self.name + 'x')
+		])
+		self.add_field(34, 1, self.name + 't')
+
+	def decode_impl(self, fields, allow64):
+		flags = fields[self.name + 't']
+		value = fields[self.name]
+		if flags:
+			return sign_extend(value, 16)
+		else:
+			assert value < 0x100
+			return Reg16(value & 0xFF)
+
+	def decode(self, fields):
+		return self.decode_impl(fields, allow64=False)
+
+	def encode_string(self, fields, opstr):
+		r = try_parse_register(opstr)
+		if r is not None:
+			if isinstance(r, Reg16):
+				fields[self.name + 't'] = 0
+				fields[self.name] = r.n << 1
+				return
+
+		v = try_parse_integer(opstr)
+		if v is not None:
+			assert -0x8000 <= v < 0x8000
+			fields[self.name + 't'] = 1
+			fields[self.name] = v & 0xFFFF
+			return
+
+		raise Exception('invalid ThreadgroupIndexDesc %r' % (opstr,))
 
 @document_operand
 class MemoryBaseDesc(OperandDesc):
@@ -1637,22 +1761,18 @@ class MemoryRegDesc(OperandDesc):
 			(10, 6, self.name),
 			(40, 2, self.name + 'x'),
 		])
-		self.add_field(48, 2, self.name + 't')
+		self.add_field(49, 1, self.name + 't')
 
 	def decode_impl(self, fields, allow64):
 		flags = fields[self.name + 't']
-		assert flags in (0b00, 0b10)
-
 		value = fields[self.name]
 
-		count = bin(fields['n']).count('1')
+		count = bin(fields['mask']).count('1')
 
-		if flags == 0b00:
+		if flags == 0b0:
 			return RegisterTuple(Reg16(value + i) for i in range(count))
-		elif flags == 0b10:
-			return RegisterTuple(Reg32((value >> 1) + i) for i in range(count))
 		else:
-			assert False, 'TODO'
+			return RegisterTuple(Reg32((value >> 1) + i) for i in range(count))
 
 	def decode(self, fields):
 		return self.decode_impl(fields, allow64=False)
@@ -1660,10 +1780,10 @@ class MemoryRegDesc(OperandDesc):
 	def encode_string(self, fields, opstr):
 		regs = [try_parse_register(i) for i in opstr.split('_')]
 		if regs and all(isinstance(r, Reg32) for r in regs):
-			flags = 0b10
+			flags = 1
 			value = regs[0].n << 1
 		elif regs and all(isinstance(r, Reg16) for r in regs):
-			flags = 0b00
+			flags = 0
 			value = regs[0].n
 		else:
 			raise Exception('invalid MemoryRegDesc %r' % (opstr,))
@@ -1675,10 +1795,98 @@ class MemoryRegDesc(OperandDesc):
 		if not 0 < len(regs) <= 4:
 			raise Exception('invalid MemoryRegDesc %r (1-4 values)' % (opstr,))
 
-		fields['n'] = (1 << len(regs)) - 1
+		#fields['mask'] = (1 << len(regs)) - 1
 		fields[self.name] = value
 		fields[self.name + 't'] = flags
 
+
+class ThreadgroupMemoryRegDesc(OperandDesc):
+	# TODO: exactly the same as MemoryRegDesc except for the offsets?
+	def __init__(self, name):
+		super().__init__(name)
+		self.add_merged_field(self.name, [
+			(9, 6, self.name),
+			(60, 2, self.name + 'x'),
+		])
+		self.add_field(8, 1, self.name + 't')
+
+	def decode_impl(self, fields, allow64):
+		flags = fields[self.name + 't']
+
+		value = fields[self.name]
+
+		count = bin(fields['mask']).count('1')
+
+		if flags == 0b0:
+			return RegisterTuple(Reg16(value + i) for i in range(count))
+		else:
+			return RegisterTuple(Reg32((value >> 1) + i) for i in range(count))
+
+	def decode(self, fields):
+		return self.decode_impl(fields, allow64=False)
+
+	def encode_string(self, fields, opstr):
+		regs = [try_parse_register(i) for i in opstr.split('_')]
+		if regs and all(isinstance(r, Reg32) for r in regs):
+			flags = 0b1
+			value = regs[0].n << 1
+		elif regs and all(isinstance(r, Reg16) for r in regs):
+			flags = 0b0
+			value = regs[0].n
+		else:
+			raise Exception('invalid ThreadgroupMemoryRegDesc %r' % (opstr,))
+
+		for i in range(1, len(regs)):
+			if regs[i].n != regs[i-1].n + 1:
+				raise Exception('invalid ThreadgroupMemoryRegDesc %r (must be consecutive)' % (opstr,))
+
+		if not 0 < len(regs) <= 4:
+			raise Exception('invalid ThreadgroupMemoryRegDesc %r (1-4 values)' % (opstr,))
+
+		fields['mask'] = (1 << len(regs)) - 1
+		fields[self.name] = value
+		fields[self.name + 't'] = flags
+
+#@document_operand
+class ThreadgroupMemoryBaseDesc(OperandDesc):
+	def __init__(self, name):
+		super().__init__(name)
+		self.add_merged_field(self.name, [
+			(16, 6, self.name),
+			(58, 2, self.name + 'x'),
+		])
+		self.add_field(22, 2, self.name + 't')
+
+#	pseudocode = '''
+#	{name}(value, flags):
+#		if value & 1: UNDEFINED()
+#		if flags != 0:
+#			return UReg64Reference(value >> 1)
+#		else:
+#			return Reg64Reference(value >> 1)
+#	'''
+
+	def decode_impl(self, fields, allow64):
+		flags = fields[self.name + 't']
+		value = fields[self.name]
+		assert (value & 1) == 0
+		if flags == 0b00:
+			return Reg16(value)
+		elif flags == 0b10:
+			return Immediate(0)
+		else:
+			return UReg16(value | ((flags >> 1) << 8))
+
+	def decode(self, fields):
+		return self.decode_impl(fields, allow64=False)
+
+#	def encode_string(self, fields, opstr):
+#		r = try_parse_register(opstr)
+#		if not isinstance(r, Reg16): # (Reg64, UReg64)):
+#			raise Exception('invalid ThreadgroupMemoryBaseDesc %r' % (opstr,))
+#
+#		fields[self.name + 't'] = 0 if isinstance(r, Reg16) else 0b10
+#		fields[self.name] = r.n << 1
 
 class SReg32Desc(OperandDesc):
 	def __init__(self, name, start, start_ex):
@@ -1819,6 +2027,15 @@ class MovFromSrInstructionDesc(MaskedInstructionDesc):
 	for each active thread:
 		D[thread] = SR.read(thread)
 	'''
+
+	def exec_thread(self, instr, corestate, thread):
+		fields = dict(self.decode_fields(instr))
+
+		if fields['SR'] == 80:
+			self.operands['D'].set_thread(fields, corestate, thread, thread)
+		else:
+			assert False, 'TODO'
+
 
 def icompare_thread(desc, fields, corestate, thread):
 	a = desc.operands['A'].evaluate_thread(fields, corestate, thread)
@@ -2847,6 +3064,22 @@ class Exp2InstructionDesc(FUnaryInstructionDesc):
 	pseudocode = FUnaryInstructionDesc.pseudocode_template.format(name='exp2')
 
 @register
+class DfdxInstructionDesc(FUnaryInstructionDesc):
+	def __init__(self):
+		super().__init__('dfdx')
+		self.add_constant(28, 6, 0b000100)
+
+	pseudocode = FUnaryInstructionDesc.pseudocode_template.format(name='dfdx')
+
+@register
+class DfdyInstructionDesc(FUnaryInstructionDesc):
+	def __init__(self):
+		super().__init__('dfdy')
+		self.add_constant(28, 6, 0b000110)
+
+	pseudocode = FUnaryInstructionDesc.pseudocode_template.format(name='dfdy')
+
+@register
 class UnknownFUnaryInstructionDesc(FUnaryInstructionDesc):
 	documentation_skip = True
 
@@ -3622,13 +3855,46 @@ instruction_descriptors.append(o)
 
 
 # wait for a load
-o = InstructionDesc('wait', size=2)
-o.documentation_begin_group = 'Memory and Stack Instructions'
-o.pseudocode = 'wait_for_loads()'
-o.add_constant(0, 8, 0b111000)
-o.add_operand(ImmediateDesc('i', 8, 1))
-instruction_descriptors.append(o)
+@register
+class WaitInstructionDesc(InstructionDesc):
+	documentation_begin_group = 'Memory and Stack Instructions'
+	def __init__(self):
+		super().__init__('wait', size=2)
+		self.add_constant(0, 8, 0b111000)
+		self.add_operand(ImmediateDesc('i', 8, 1))
 
+	pseudocode = 'wait_for_loads()'
+
+	def exec(self, instr, corestate):
+		# TODO: queue loads
+		pass
+
+
+MEMORY_FORMATS = {
+	0: 'i8',         # size = 1
+	1: 'i16',        # size = 2
+	2: 'i32',        # size = 4
+	# 3 seems to act like i16?
+	4: 'u8norm',     # size = 1
+	5: 's8norm',     # size = 1
+	6: 'u16norm',    # size = 2
+	7: 's16norm',    # size = 2
+	8: 'rgb10a2',    # size = 1
+
+	10: 'srgba8',    # size = 1
+
+	12: 'rg11b10f',  # size = 1
+	13: 'rgb9e5',    # size = 1
+
+	# TODO: others?
+}
+
+MASK_DESCRIPTIONS = {
+	0b0001: 'single',
+	0b0011: 'pair',
+	0b0111: 'triple',
+	0b1111: 'quad',
+}
 
 @register
 class StoreToUniformInstructionDesc(InstructionDesc):
@@ -3654,21 +3920,8 @@ class StoreToUniformInstructionDesc(InstructionDesc):
 		self.add_constant(28, 2, 0b11) # ?
 		self.add_constant(50, 2, 0) # ?
 
-		self.add_operand(EnumDesc('sz', 7, 2, {
-			0: 'i8',
-			1: 'i16',
-			2: 'i32',
-		}))
-
-		#	ImmediateDesc('sz', 7, 2))
-
-		self.add_operand(EnumDesc('n', 52, 4, {
-			0b0001: 'single',
-			0b0011: 'pair',
-			0b0111: 'triple',
-			0b1111: 'quad',
-		}))
-
+		self.add_operand(EnumDesc('F', 7, 2, MEMORY_FORMATS))
+		self.add_operand(EnumDesc('mask', 52, 4, MASK_DESCRIPTIONS))
 
 		self.add_operand(ImmediateDesc('b', 44, 3))
 		self.add_operand(MemoryRegDesc('R'))
@@ -3681,53 +3934,295 @@ class StoreToUniformInstructionDesc(InstructionDesc):
 		self.add_operand(MemoryShiftDesc('s'))
 
 
-class DeviceLoadStoreInstructionDesc(InstructionDesc):
+class DeviceLoadStoreInstructionDesc(MaskedInstructionDesc):
 	def __init__(self, name, bit):
 		super().__init__(name, size=(6, 8), length_bit_pos=47) # ?
 
-		# unknowns
-		self.add_operand(ImmediateDesc('u1', 25, 2))
+		self.add_operand(ImmediateDesc('u1', 26, 1))
 		self.add_operand(ImmediateDesc('u2', 30, 1))
+		self.add_operand(ImmediateDesc('u3', 28, 2))
+		self.add_operand(ImmediateDesc('u4', 44, 3))
+		self.add_operand(ImmediateDesc('u5', 50, 2))
 
 		self.add_constant(0, 7, 0b0000101 | (bit << 6))
 
-		self.add_constant(9, 1, 0) # TODO
+		self.add_operand(EnumDesc('F', [
+			(7, 3, 'F'),
+			(48, 1, 'Fx'),
+		], None, MEMORY_FORMATS))
 
-		self.add_constant(28, 2, 0) # ?
-		self.add_constant(50, 2, 0) # ?
+		self.add_operand(EnumDesc('mask', 52, 4, MASK_DESCRIPTIONS))
 
-		self.add_operand(EnumDesc('sz', 7, 2, {
-			0: 'i8',
-			1: 'i16',
-			2: 'i32',
-		}))
-
-		#	ImmediateDesc('sz', 7, 2))
-
-		self.add_operand(EnumDesc('n', 52, 4, {
-			0b0001: 'single',
-			0b0011: 'pair',
-			0b0111: 'triple',
-			0b1111: 'quad',
-		}))
-
-
-		self.add_operand(ImmediateDesc('b', 44, 3))
 		self.add_operand(MemoryRegDesc('R'))
 		self.add_operand(MemoryBaseDesc('A'))
 		self.add_operand(MemoryIndexDesc('O'))
+		self.add_operand(EnumDesc('Ou', 25, 1, {
+			0: 'signed',
+			1: 'unsigned',
+		}))
 		self.add_operand(MemoryShiftDesc('s'))
 
 
+def decode_float11(n):
+	# TODO: test subnormals/infinity
+	e = (n >> 6) & 0x1F
+	if e == 0x1F:
+		if n & 0x3F:
+			return fma.u32_to_f32(0x7fc00000) # nan
+		else:
+			return fma.u32_to_f32(0x7f800000) # inf
+	implicit = 0x40
+	if e == 0:
+		implicit = 0
+		e += 1
+	f = (implicit | (n & 0x3F)) / 64.0
+	return f * (2.0 ** (e - 15))
+
+def decode_float10(n):
+	# TODO: test subnormals/infinity
+	e = (n >> 5) & 0x1F
+	if e == 0x1F:
+		if n & 0x1F:
+			return fma.u32_to_f32(0x7fc00000) # nan
+		else:
+			return fma.u32_to_f32(0x7f800000) # inf
+	implicit = 0x20
+	if e == 0:
+		implicit = 0
+		e += 1
+	f = (implicit | (n & 0x1F)) / 32.0
+	return f * (2.0 ** (e - 15))
+
 @register
 class DeviceLoadInstructionDesc(DeviceLoadStoreInstructionDesc):
+	documentation_html = '''
+	<p>
+	<code>device_load</code> initiates a load from device memory, the result
+	of which may be used after a <code>wait</code>.
+
+	The data can be unpacked from a variety of formats, or passed through as-is.
+
+	On each thread, up to four aligned values, each up to 32-bits, can be
+	read from a base address plus an offset (shifted left by the alignment,
+	with an optional additional left shift of up to two).
+	</p>
+
+	<p>
+	The number of values to read is described by a mask,
+	such that <code>0b0001</code> indicates one value, or <code>0b1111</code>
+	loads four values. Non-contiguous masks skip values in memory,
+	but still write the result to contiguous registers.
+	</p>
+
+	<p>
+	Non-packed formats (8, 16, and 32-bit values) are zero
+	extended. All packed values are unpacked to 16-bit or 32-bit floating-point
+	values, depending on the size of the register. Bit-packed formats (<code>rgb10a2</code>,
+	<code>rg11b10f</code> and <code>rgb9e5</code>)</code> are supported, but ignore the optional
+	shift and the mask. They always read an aligned 32-bit value, and write to the same number of
+	registers. However simple packed values (<code>unorm8</code>, <code>snorm8</code>,
+	<code>unorm16</code>, <code>snorm16</code> and <code>srgba8</code>) do not have this limitation.
+	</p>
+
+	<p>
+	Unaligned addresses are rounded-down to the required alignment. The base address (<code>A</code>)
+	is a 64-bit value from either uniform or general-purpose registers. The offset (<code>O</code>) may
+	be a signed 16-bit immediate, or a signed or unsigned 32-bit general-purpose register.
+	</p>
+	'''
 	def __init__(self):
 		super().__init__('device_load', 0)
+
+	#pseudocode = '''
+	#offset = 
+	#'''
+
+	def exec_thread(self, instr, corestate, thread):
+		fields = dict(self.decode_fields(instr))
+
+		# NOTE: the philosophy here is "make it work, then make it nice".
+		# the idea being that once i know i understand the scope of the
+		# i can make informed decisions about how to factor it and
+		# represent it. this has a way to go before it works, and a long
+		# way to go before it is nice.
+
+		# TODO: these fields (A and O) should get their own state
+		# via self.operands[name].evaluate_thread(fields, corestate, thread)
+
+		if fields['At']:
+			# TODO: test
+			address = corestate.uniforms.get_reg64(fields['A'] >> 1, thread)
+		else:
+			address = corestate.get_reg64(fields['A'] >> 1, thread)
+
+		if fields['Ot']:
+			# TODO: test
+			offset = sign_extend(fields['O'], 16)
+		else:
+			offset = corestate.get_reg32(fields['O'] >> 1, thread)
+			if not fields['Ou']:
+				offset = sign_extend(offset, 32)
+
+
+		shift = fields['s']
+		if shift == 3:
+			shift = 2
+
+		# TODO: we probably want a separate code path for bitpacked formats,
+		# they always an aligned 32-bits, ignoring the shift, and ignoring the
+		# mask to write 3 or 4 floating point results. the current handling
+		# of this is a mess.
+
+		# Note that, e.g. format 10 also converts to float, with different
+		# behaviour depending on whether or not the byte was loaded from
+		# start+3 (mask & 0b1000), but does not ignore the mask. There's a
+		# lot going on.
+
+		bit_packed = fields['F'] in (8, 12, 13)
+		if bit_packed:
+			# weird
+			shift = 2
+
+		offset <<= shift
+
+		item_size = {
+			1: 2, # i16
+			2: 4, # i32
+			3: 2, # i16?
+			6: 2, # unorm16
+			7: 2, # unorm16
+		}.get(fields['F'], 1)
+
+		address &= ~(item_size - 1)
+
+		register = fields['R']
+		if fields['Rt'] == 1:
+			# 32-bit
+			register >>= 1
+
+		if fields['Rt'] != 1 and fields['F'] == 2:
+			# invalid to load 32-bit values to 16-bit registers
+			assert False, "illegal instruction"
+
+		# Result registers are always contiguous (and the count is
+		# typically popcount(mask)) but we can skip over memory by
+		# using a non-contiguous mask.
+
+		mask = fields['mask']
+		if bit_packed:
+			address &= ~3
+			mask = 0xF
+
+		values = []
+		for i in range(4):
+			if mask & (1 << i):
+				load_address = address + (offset + i) * item_size
+
+				if item_size == 1:
+					value = corestate.device_memory.get_byte(load_address)
+				elif item_size == 2:
+					value = corestate.device_memory.get_u16(load_address)
+				elif item_size == 4:
+					value = corestate.device_memory.get_u32(load_address)
+				else:
+					assert False
+				values.append((i, value))
+
+		for n, value in values:
+			# TODO: need to validate rounding and test edge cases on many of these
+			load_real = None
+			skip = False
+			if fields['F'] < 4:
+				load_value = value
+			elif fields['F'] == 4:
+				load_real = value / 255.0
+			elif fields['F'] == 5:
+				value = sign_extend(value, 8)
+				if value < -127:
+					value = -127
+				load_real = value / 127.0
+			elif fields['F'] == 6:
+				load_real = value / 65535.0
+			elif fields['F'] == 7:
+				value = sign_extend(value, 16)
+				if value < -32767:
+					value = -32767
+				load_real = value / 32767.0
+			elif fields['F'] == 8:
+				bits = sum(v << (i * 8) for i, v in values)
+				if n == 0:
+					load_real = (bits & 1023) / 1023.
+				elif n == 1:
+					load_real = ((bits >> 10) & 1023) / 1023.
+				elif n == 2:
+					load_real = ((bits >> 20) & 1023) / 1023.
+				elif n == 3:
+					load_real = ((bits >> 30) & 3) / 3.0
+				else:
+					load_real = 0
+			elif fields['F'] == 10:
+				load_real = 0
+				if n == 3:
+					load_real = value / 255.0
+				else:
+					load_real = SRGB_TABLE[value]
+			elif fields['F'] == 12:
+				# TODO: this is (sometimes) wrong rounding to half
+				load_real = 0
+				bits = sum(v << (i * 8) for i, v in values)
+
+				if n == 0:
+					load_real = decode_float11(bits & ((1 << 11) - 1))
+				elif n == 1:
+					load_real = decode_float11((bits >> 11) & ((1 << 11) - 1))
+				elif n == 2:
+					load_real = decode_float10((bits >> 22) & ((1 << 10) - 1))
+				elif n == 3:
+					skip = True
+			elif fields['F'] == 13:
+				load_real = 0
+				bits = sum(v << (i * 8) for i, v in values)
+
+				if n == 0:
+					f = bits
+				elif n == 1:
+					f = (bits >> 9)
+				elif n == 2:
+					f = (bits >> 18)
+				elif n == 3:
+					skip = True
+
+				e = (bits >> 27) - 15
+				load_real = (2 ** e) * (f & 0x1FF) / 512.0
+			else:
+				# 14 and 15 look to be similar int32->several floats
+				# not sure about the others - maybe one of them was
+				# a bad instruction?
+				assert False, 'TODO %d' % (fields['F'],)
+
+			# TODO: is this true always when F >= 4? if so, might be good to change
+			# the condition and/or separate it out.
+			if load_real is not None:
+				if fields['Rt']:
+					load_value = fma.f32_to_u32(load_real)
+				else:
+					load_value = fma.f16_to_u16(load_real)
+
+			# TODO: "skip" is a hack to handle bit_packed fields which write to
+			# less than four registers.
+			if not skip:
+				if fields['Rt'] == 1:
+					corestate.set_reg32(register, thread, load_value)
+				else:
+					corestate.set_reg16(register, thread, load_value)
+				register += 1
 
 @register
 class DeviceStoreInstructionDesc(DeviceLoadStoreInstructionDesc):
 	def __init__(self):
 		super().__init__('device_store', 1)
+
+
 
 class StackLoadStoreInstructionDesc(InstructionDesc):
 	def __init__(self, name, bit):
@@ -3746,22 +4241,13 @@ class StackLoadStoreInstructionDesc(InstructionDesc):
 		if not bit:
 			self.add_operand(reg)
 
-		self.add_operand(EnumDesc('sz', 8, 2, {
-			0: 'i8',
-			1: 'i16',
-			2: 'i32',
-		}))
+		self.add_operand(EnumDesc('F', [(8, 2, 'F'), (50, 2, 'Fx')], None, MEMORY_FORMATS))
 		self.add_operand(ImmediateDesc('i1', 26, 1))
 		self.add_operand(ImmediateDesc('i2', 36, 3))
 		#self.add_operand(ImmediateDesc('i3', 49, 1))
-		self.add_operand(ImmediateDesc('i4', 50, 2))
+		#self.add_operand(ImmediateDesc('i4', 50, 2))
 
-		self.add_operand(EnumDesc('n', 52, 4, {
-			0b0001: 'single',
-			0b0011: 'pair',
-			0b0111: 'triple',
-			0b1111: 'quad',
-		}))
+		self.add_operand(EnumDesc('mask', 52, 4, MASK_DESCRIPTIONS))
 
 
 		self.add_operand(ImmediateDesc('i5', 44, 3))
@@ -3770,7 +4256,6 @@ class StackLoadStoreInstructionDesc(InstructionDesc):
 			self.add_operand(reg)
 
 		self.add_operand(MemoryIndexDesc('O'))
-		#self.add_operand(StackAdjustmentDesc('v'))
 
 		self.add_operand(ImmediateDesc('i6', 30, 1))
 
@@ -3799,9 +4284,9 @@ class StackGetPtrInstructionDesc(InstructionDesc):
 
 		self.add_operand(ImmediateDesc('i3', 44, 3))
 
-		self.add_operand(StackReg32Desc('r', [
-			(10, 6, 'rl'),
-			(40, 2, 'rh'),
+		self.add_operand(StackReg32Desc('R', [
+			(10, 6, 'R'),
+			(40, 2, 'Rx'),
 		]))
 
 		#self.add_operand(StackAdjustmentDesc('v'))
@@ -3824,6 +4309,70 @@ class StackAdjustInstructionDesc(InstructionDesc):
 		self.add_operand(StackAdjustmentDesc('v'))
 		#self.add_operand(MemoryIndexDesc('idx'))
 
+class ThreadgroupLoadStoreInstructionDesc(InstructionDesc):
+	def __init__(self, name, bit):
+		super().__init__(name, size=(6, 8)) #(6, 8), length_bit_pos=47) # ?
+
+		self.add_constant(0, 4, 0b1001)
+		self.add_constant(5, 2, 0b01 | (bit << 1))
+
+		# bit 7 might be cache/discard for load/store respectively?
+
+		self.add_operand(EnumDesc('F', 24, 4, MEMORY_FORMATS))
+
+		self.add_operand(EnumDesc('mask', 36, 4, MASK_DESCRIPTIONS))
+
+		self.add_operand(ThreadgroupMemoryRegDesc('R'))
+
+		self.add_operand(ThreadgroupMemoryBaseDesc('A'))
+		self.add_operand(ThreadgroupIndexDesc('O'))
+		#self.add_operand(MemoryShiftDesc('s'))
+
+@register
+class ThreadgroupLoadInstructionDesc(ThreadgroupLoadStoreInstructionDesc):
+	def __init__(self):
+		super().__init__('threadgroup_load', 1)
+
+@register
+class ThreadgroupStoreInstructionDesc(ThreadgroupLoadStoreInstructionDesc):
+	def __init__(self):
+		super().__init__('threadgroup_store', 0)
+
+@register
+class TextureLoadInstructionDesc(InstructionDesc):
+	# TODO: can we illustrate size of the "optional" part in the bit-diagrams?
+
+	documentation_html = '<p>The last four bytes are omitted if L=0.</p>'
+	def __init__(self):
+		# TODO: docs will need to be changed to reflect the length flag
+		# behaviour here!
+		super().__init__('texture_load', size=(8, 12))
+		self.add_constant(0, 8, 0x71)
+
+@register
+class TextureLoadInstructionDesc(InstructionDesc):
+	documentation_html = '<p>The last four bytes are omitted if L=0.</p>'
+	def __init__(self):
+		super().__init__('texture_sample', size=(8, 12))
+		self.add_constant(0, 8, 0x31)
+
+@register
+class TextureLoadInstructionDesc(InstructionDesc):
+	def __init__(self):
+		super().__init__('threadgroup_barrier', size=2)
+		self.add_constant(0, 8, 0x68)
+
+@register
+class TextureLoadInstructionDesc(InstructionDesc):
+	def __init__(self):
+		super().__init__('TODO.after_sampling1', size=2)
+		self.add_constant(0, 16, 0x101C)
+
+@register
+class TextureLoadInstructionDesc(InstructionDesc):
+	def __init__(self):
+		super().__init__('TODO.after_sampling2', size=2)
+		self.add_constant(0, 16, 0x62CC)
 
 
 def get_instruction_descriptor(n):

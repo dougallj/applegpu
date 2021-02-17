@@ -146,6 +146,9 @@ def shr_compress(v, shift):
 def u32_to_f32(v):
 	return struct.unpack('<f', struct.pack('<I', v))[0]
 
+def f32_to_u32(v):
+	return struct.unpack('<I', struct.pack('<f', v))[0]
+
 def f64_to_u64(f64):
 	return struct.unpack('<Q', struct.pack('<d', f64))[0]
 

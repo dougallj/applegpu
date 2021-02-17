@@ -255,8 +255,7 @@ SIMD-groups. Using fewer registers (e.g. by using 16-bit types instead of
 
 <p>
 Certain instructions are hardcoded to use early registers. <code>r0l</code>
-tracks the execution mask stack, <code>r1</code> is used as the link register,
-and <code>r4h</code> appears to be used for something too.
+tracks the execution mask stack, and <code>r1</code> is used as the link register.
 </p>
 
 <p>
@@ -372,11 +371,12 @@ print('''
 <h1>Instructions</h1>
 
 <p>
-Instructions vary in length in multiples of two bytes up to ten bytes. Some
-instructions have a long and short encoding. This is indicated by a bit
-<code>L</code>, which, if zero, indicates the last two bytes of the
-instruction are omitted, and any bits within those bytes should
-be read as zero.
+Instructions vary in length in multiples of two bytes up to twelve bytes (so far).
+Some instructions have a long and short encoding. This is indicated by a bit
+<code>L</code>, which, if zero, indicates the last two (or four) bytes of the
+instruction are omitted, and any bits within those bytes should be read as zero.
+So far only 12-byte instructions omit the last four bytes, and all others omit
+the last two.
 </p>
 
 <p>
