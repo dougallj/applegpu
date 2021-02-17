@@ -57,7 +57,7 @@ However, it is used in the hardware tests.
 
 ## Hardware tests
 
-Hardware tests run instructions on the actual GPU (so can only run on Apple Silicon), and emulate them, and compare state afterwards. This is acheived using a modified version of Alyssa Rosenzweig's wrap.dylib from https://github.com/AsahiLinux/gpu
+Hardware tests run instructions on the actual GPU (so can only run on Apple Silicon), and emulate them, and compare state afterwards. This is achieved using a modified version of Alyssa Rosenzweig's wrap.dylib from https://github.com/AsahiLinux/gpu
 
 To build the testbed: `cd hwtestbed && make`
 
