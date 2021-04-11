@@ -3848,13 +3848,6 @@ o.add_operand(ImmediateDesc('i', 8, 10)) # x: 26,2
 o.add_operand(ImmediateDesc('j', 22, 2)) # x: 26,2
 instruction_descriptors.append(o)
 
-# TODO
-# uses sr60 implicitly?
-o = InstructionDesc('TODO.blend', size=8)
-o.add_constant(0, 7, 0b1001)
-instruction_descriptors.append(o)
-
-
 
 # wait for a load
 @register
@@ -3897,6 +3890,20 @@ MASK_DESCRIPTIONS = {
 	0b0111: 'triple',
 	0b1111: 'quad',
 }
+
+# TODO
+# uses sr60 implicitly?
+@register
+class BlendDesc(InstructionDesc):
+	def __init__(self):
+		super().__init__('blend', size=8)
+
+		self.add_constant(0, 7, 0x09)
+		self.add_operand(ALUDstDesc('D', 60)) # TODO: confirm extension, XXX: actually a source!
+		self.add_operand(EnumDesc('F', 24, 4, MEMORY_FORMATS))
+		self.add_operand(ImmediateDesc('rt', 32, 4))
+		self.add_operand(EnumDesc('mask', 36, 4, MASK_DESCRIPTIONS))
+
 
 @register
 class StoreToUniformInstructionDesc(InstructionDesc):
