@@ -3876,7 +3876,7 @@ MEMORY_FORMATS = {
 	0: 'i8',         # size = 1
 	1: 'i16',        # size = 2
 	2: 'i32',        # size = 4
-	# 3 seems to act like i16?
+	3: 'f16',	 # size = 2
 	4: 'u8norm',     # size = 1
 	5: 's8norm',     # size = 1
 	6: 'u16norm',    # size = 2
