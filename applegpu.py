@@ -3057,6 +3057,39 @@ class SqrtInstructionDesc(FUnaryInstructionDesc):
 	pseudocode = FUnaryInstructionDesc.pseudocode_template.format(name='sqrt')
 
 @register
+class SinPt1InstructionDesc(FUnaryInstructionDesc):
+	documentation_html = '''
+	<p>
+	<code>sin_pt_1</code> is used together with <code>sin_pt_2</code> and
+	supporting ALU to compute the sine function. sin_pt_1 takes an angle
+	around the circle in the interval [0, 4) and produces an intermediate
+	result. This intermediate result is then passed to sin_pt_2, and the
+	two results are multipled to give sin. The argument reduction to [0, 4)
+	can be computed with a few ALU instructions: <code>reduce(x) = 4
+	fract(x / tau)</code>, where <code>tau</code> is the circle constant
+	formerly known as twice pi. Calculating cosine follows from the
+	identity <code>cos(x) = sin(x + tau/4)</code>. After multipling by
+	<code>1/tau</code>, the bias become 1/4 which can be added in the same
+	cycle via a fused multiply-add. Tangent should be lowered to a division
+	of sine and cosine.
+	</p>
+	'''
+
+	def __init__(self):
+		super().__init__('sin_pt_1')
+		self.add_constant(28, 6, 0b001010)
+
+	pseudocode = FUnaryInstructionDesc.pseudocode_template.format(name='sin_pt_1')
+
+@register
+class SinPt2InstructionDesc(FUnaryInstructionDesc):
+	def __init__(self):
+		super().__init__('sin_pt_2')
+		self.add_constant(28, 6, 0b001110)
+
+	pseudocode = FUnaryInstructionDesc.pseudocode_template.format(name='sin_pt_2')
+
+@register
 class Log2InstructionDesc(FUnaryInstructionDesc):
 	def __init__(self):
 		super().__init__('log2')
