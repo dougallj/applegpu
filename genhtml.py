@@ -322,7 +322,10 @@ without writing it back to the register file.</p>
 <p>While the <code>cache</code> hint should only change performance, the
 <code>discard</code> hint will make future reads undefined, which could
 lead to confusing issues. <code>discard</code> should probably not
-be used with conditional execution.</p>
+be used within conditional execution, as inactive threads within the SIMD-group
+may contain data that has not been written back to the register file that would
+probably also also get discarded. The behaviour of this hint when execution is
+partially or completely masked has not been tested.</p>
 
 <p>
 Either hint may be used multiple times even if the same operand appears twice,
