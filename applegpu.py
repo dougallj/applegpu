@@ -1,4 +1,5 @@
 import fma
+import os
 
 from srgb import SRGB_TABLE
 
@@ -129,7 +130,7 @@ class Register(Operand):
 	def _str(self, names):
 		parts = [names[self.n]]
 		for i in self.flags:
-			if i == 'cache':
+			if 'APPLEGPU_CRYPTIC' in os.environ and i == 'cache':
 				parts[0] = CACHE_HINT + parts[0]
 			else:
 				parts.append(i)
