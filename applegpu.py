@@ -3904,6 +3904,16 @@ class BlendDesc(InstructionDesc):
 		self.add_operand(ImmediateDesc('rt', 32, 4))
 		self.add_operand(EnumDesc('mask', 36, 4, MASK_DESCRIPTIONS))
 
+@register
+class LoadVarDesc(InstructionDesc):
+        def __init__(self):
+                super().__init__('ld_var', size=8)
+
+                self.add_constant(0, 6, 0x21)
+                self.add_operand(ALUDstDesc('D', 60)) # TODO: confirm extension
+                self.add_operand(ImmediateDesc('perspective', 6, 1))
+                self.add_operand(ImmediateDesc('index', 16, 4)) # ??
+                self.add_operand(ImmediateDesc('mask', 28, 4)) # components to write, 0 writes all, 0xF never observed..
 
 @register
 class StoreToUniformInstructionDesc(InstructionDesc):
