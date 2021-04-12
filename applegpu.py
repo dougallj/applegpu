@@ -939,8 +939,8 @@ class ALUSrcDesc(AbstractSrcOperandDesc):
 			if value & 1: UNDEFINED()
 			return Reg32Reference(value >> 1, cache=cache_flag, discard=discard_flag)
 
-		if flags >> 2 >= 0b01 and max_size >= 16:
-			if flags >> 2 != 0b01: UNDEFINED()
+		if max_size >= 16:
+			if flags >> 2 != 0b00: UNDEFINED()
 			return Reg16Reference(value, cache=cache_flag, discard=discard_flag)
 	'''
 
