@@ -3049,6 +3049,14 @@ class RsqrtInstructionDesc(FUnaryInstructionDesc):
 	pseudocode = FUnaryInstructionDesc.pseudocode_template.format(name='rsqrt')
 
 @register
+class SqrtInstructionDesc(FUnaryInstructionDesc):
+	def __init__(self):
+		super().__init__('sqrt')
+		self.add_constant(28, 6, 0b000001)
+
+	pseudocode = FUnaryInstructionDesc.pseudocode_template.format(name='sqrt')
+
+@register
 class Log2InstructionDesc(FUnaryInstructionDesc):
 	def __init__(self):
 		super().__init__('log2')
