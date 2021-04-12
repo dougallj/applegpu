@@ -3049,6 +3049,47 @@ class RsqrtInstructionDesc(FUnaryInstructionDesc):
 	pseudocode = FUnaryInstructionDesc.pseudocode_template.format(name='rsqrt')
 
 @register
+class SqrtInstructionDesc(FUnaryInstructionDesc):
+	def __init__(self):
+		super().__init__('sqrt')
+		self.add_constant(28, 6, 0b000001)
+
+	pseudocode = FUnaryInstructionDesc.pseudocode_template.format(name='sqrt')
+
+@register
+class SinPt1InstructionDesc(FUnaryInstructionDesc):
+	documentation_html = '''
+	<p>
+	<code>sin_pt_1</code> is used together with <code>sin_pt_2</code> and
+	supporting ALU to compute the sine function. sin_pt_1 takes an angle
+	around the circle in the interval [0, 4) and produces an intermediate
+	result. This intermediate result is then passed to sin_pt_2, and the
+	two results are multipled to give sin. The argument reduction to [0, 4)
+	can be computed with a few ALU instructions: <code>reduce(x) = 4
+	fract(x / tau)</code>, where <code>tau</code> is the circle constant
+	formerly known as twice pi. Calculating cosine follows from the
+	identity <code>cos(x) = sin(x + tau/4)</code>. After multipling by
+	<code>1/tau</code>, the bias become 1/4 which can be added in the same
+	cycle via a fused multiply-add. Tangent should be lowered to a division
+	of sine and cosine.
+	</p>
+	'''
+
+	def __init__(self):
+		super().__init__('sin_pt_1')
+		self.add_constant(28, 6, 0b001010)
+
+	pseudocode = FUnaryInstructionDesc.pseudocode_template.format(name='sin_pt_1')
+
+@register
+class SinPt2InstructionDesc(FUnaryInstructionDesc):
+	def __init__(self):
+		super().__init__('sin_pt_2')
+		self.add_constant(28, 6, 0b001110)
+
+	pseudocode = FUnaryInstructionDesc.pseudocode_template.format(name='sin_pt_2')
+
+@register
 class Log2InstructionDesc(FUnaryInstructionDesc):
 	def __init__(self):
 		super().__init__('log2')
@@ -3848,13 +3889,6 @@ o.add_operand(ImmediateDesc('i', 8, 10)) # x: 26,2
 o.add_operand(ImmediateDesc('j', 22, 2)) # x: 26,2
 instruction_descriptors.append(o)
 
-# TODO
-# uses sr60 implicitly?
-o = InstructionDesc('TODO.blend', size=8)
-o.add_constant(0, 7, 0b1001)
-instruction_descriptors.append(o)
-
-
 
 # wait for a load
 @register
@@ -3876,7 +3910,7 @@ MEMORY_FORMATS = {
 	0: 'i8',         # size = 1
 	1: 'i16',        # size = 2
 	2: 'i32',        # size = 4
-	# 3 seems to act like i16?
+	3: 'f16',	 # size = 2
 	4: 'u8norm',     # size = 1
 	5: 's8norm',     # size = 1
 	6: 'u16norm',    # size = 2
@@ -3897,6 +3931,30 @@ MASK_DESCRIPTIONS = {
 	0b0111: 'triple',
 	0b1111: 'quad',
 }
+
+# TODO
+# uses sr60 implicitly?
+@register
+class BlendDesc(InstructionDesc):
+	def __init__(self):
+		super().__init__('blend', size=8)
+
+		self.add_constant(0, 7, 0x09)
+		self.add_operand(ALUDstDesc('D', 60)) # TODO: confirm extension, XXX: actually a source!
+		self.add_operand(EnumDesc('F', 24, 4, MEMORY_FORMATS))
+		self.add_operand(ImmediateDesc('rt', 32, 4))
+		self.add_operand(EnumDesc('mask', 36, 4, MASK_DESCRIPTIONS))
+
+@register
+class LoadVarDesc(InstructionDesc):
+        def __init__(self):
+                super().__init__('ld_var', size=8)
+
+                self.add_constant(0, 6, 0x21)
+                self.add_operand(ALUDstDesc('D', 60)) # TODO: confirm extension
+                self.add_operand(ImmediateDesc('perspective', 6, 1))
+                self.add_operand(ImmediateDesc('index', 16, 4)) # ??
+                self.add_operand(ImmediateDesc('mask', 28, 4)) # components to write, 0 writes all, 0xF never observed..
 
 @register
 class StoreToUniformInstructionDesc(InstructionDesc):
