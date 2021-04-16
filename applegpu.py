@@ -2299,8 +2299,6 @@ class IMAddInstructionDesc(ISaturatableInstructionDesc):
 
 @register
 class ConvertInstructionDesc(InstructionDesc):
-	documentation_skip = True
-
 	def __init__(self):
 		# TODO
 		super().__init__('convert', size=6)
@@ -2324,11 +2322,18 @@ class ConvertInstructionDesc(InstructionDesc):
 			10: 'u32_to_f',
 			11: 's32_to_f',
 		}))
+		self.add_constant(22, 4, 0) # flags for the mode (0 = immediate)
 
 		self.add_operand(ALUDstDesc('D', 44))
 		self.add_operand(ALUSrcDesc('src', 28, 40))
 
-		self.add_operand(ImmediateDesc('i2', 26, 2)) # ??
+		# TODO: confirm this (based on observed values only, Metal does
+		# not allow setting round mode). If this is true, 2 and 3 are
+		# likely round to negative/positive infinity respectively?
+		self.add_operand(EnumDesc('round', 26, 2, {
+			0: 'rtz', # round to zero
+			1: 'rte' # round to nearest
+		}))
 
 
 
