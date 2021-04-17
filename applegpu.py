@@ -1028,7 +1028,9 @@ class MulSrcDesc(ALUSrcDesc):
 	pseudocode = '''
 	{name}(value, flags, sx):
 		source = ALUSrc(value, flags, max_size=32)
-		if sx and source.thread_bit_size >= 16:
+		if sx:
+			# Note: 8-bit immediates have already been zero-extended to 16-bit,
+			# so do not get sign extended.
 			return SignExtendWrapper(source, source.thread_bit_size)
 		else:
 			return source
@@ -1041,7 +1043,9 @@ class AddSrcDesc(MulSrcDesc):
 	pseudocode = '''
 	{name}(value, flags, sx):
 		source = ALUSrc(value, flags, max_size=64)
-		if sx and source.thread_bit_size >= 16:
+		if sx:
+			# Note: 8-bit immediates have already been zero-extended to 16-bit,
+			# so do not get sign extended.
 			return SignExtendWrapper(source, source.thread_bit_size)
 		else:
 			return source
