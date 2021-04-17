@@ -2652,6 +2652,7 @@ class BitopInstructionDesc(MaskedInstructionDesc):
 		b = B[thread]
 
 		if tt0 == tt1 and tt2 == tt3 and tt0 != tt2:
+			UNDEFINED()
 			result = a
 		else:
 			result = 0
@@ -3059,12 +3060,18 @@ class RsqrtInstructionDesc(FUnaryInstructionDesc):
 	pseudocode = FUnaryInstructionDesc.pseudocode_template.format(name='rsqrt')
 
 @register
-class SqrtInstructionDesc(FUnaryInstructionDesc):
+class RsqrtSpecialInstructionDesc(FUnaryInstructionDesc):
+	documentation_html = '''
+	<p>
+	<code>rsqrt_special</code> can be used to implement fast <code>sqrt</code> as
+	<code>rsqrt_special(x) * x</code>, by handling special-cases differently.
+	</p>
+	'''
 	def __init__(self):
-		super().__init__('sqrt')
+		super().__init__('rsqrt_special')
 		self.add_constant(28, 6, 0b000001)
 
-	pseudocode = FUnaryInstructionDesc.pseudocode_template.format(name='sqrt')
+	pseudocode = FUnaryInstructionDesc.pseudocode_template.format(name='rsqrt_special')
 
 @register
 class SinPt1InstructionDesc(FUnaryInstructionDesc):
@@ -3946,7 +3953,10 @@ class BlendDesc(InstructionDesc):
 		super().__init__('blend', size=8)
 
 		self.add_constant(0, 7, 0x09)
-		self.add_operand(ALUDstDesc('D', 60)) # TODO: confirm extension, XXX: actually a source!
+
+		# XXX: actually a source! ALUDstDesc's cache hint possibly a discard hint.
+		self.add_operand(ALUDstDesc('D', 60))
+
 		self.add_operand(EnumDesc('F', 24, 4, MEMORY_FORMATS))
 		self.add_operand(ImmediateDesc('rt', 32, 4))
 		self.add_operand(EnumDesc('mask', 36, 4, MASK_DESCRIPTIONS))
