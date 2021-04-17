@@ -3122,15 +3122,11 @@ class DfdxInstructionDesc(FUnaryInstructionDesc):
 		super().__init__('dfdx')
 		self.add_constant(28, 6, 0b000100)
 
-	pseudocode = FUnaryInstructionDesc.pseudocode_template.format(name='dfdx')
-
 @register
 class DfdyInstructionDesc(FUnaryInstructionDesc):
 	def __init__(self):
 		super().__init__('dfdy')
 		self.add_constant(28, 6, 0b000110)
-
-	pseudocode = FUnaryInstructionDesc.pseudocode_template.format(name='dfdy')
 
 @register
 class UnknownFUnaryInstructionDesc(FUnaryInstructionDesc):
