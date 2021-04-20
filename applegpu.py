@@ -1570,10 +1570,14 @@ class FConditionDesc(BaseConditionDesc):
 			return FloatLessThanComparison(invert_result)
 		if condition == 0b010:
 			return FloatGreaterThanComparison(invert_result)
+		if condition == 0b011:
+			return FloatLessThanNanLosesComparison(invert_result)
 		if condition == 0b101:
 			return FloatLessThanOrEqualComparison(invert_result)
 		if condition == 0b110:
 			return FloatGreaterThanOrEqualComparison(invert_result)
+		if condition == 0b111:
+			return FloatGreaterThanNanLosesComparison(invert_result)
 	'''
 
 	def __init__(self, cc_off=13, cc_n_off=8):
@@ -1583,14 +1587,18 @@ class FConditionDesc(BaseConditionDesc):
 			0b000: 'eq',
 			0b001: 'lt',
 			0b010: 'gt',
+			0b011: 'ltn',
 			0b101: 'gte',
 			0b110: 'lte',
+			0b111: 'gtn',
 
 			0b1000: 'neq',
 			0b1001: 'nlt',
+			0b1011: 'nltn', # unobserved
 			0b1010: 'ngt',
 			0b1101: 'ngte',
 			0b1110: 'nlte',
+			0b1111: 'ngtn', # unobserved
 		}
 
 
