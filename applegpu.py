@@ -1601,10 +1601,14 @@ class FConditionDesc(BaseConditionDesc):
 			return FloatLessThanComparison(invert_result)
 		if condition == 0b010:
 			return FloatGreaterThanComparison(invert_result)
+		if condition == 0b011:
+			return FloatLessThanNanLosesComparison(invert_result)
 		if condition == 0b101:
 			return FloatLessThanOrEqualComparison(invert_result)
 		if condition == 0b110:
 			return FloatGreaterThanOrEqualComparison(invert_result)
+		if condition == 0b111:
+			return FloatGreaterThanNanLosesComparison(invert_result)
 	'''
 
 	def __init__(self, cc_off=13, cc_n_off=8):
@@ -1614,14 +1618,18 @@ class FConditionDesc(BaseConditionDesc):
 			0b000: 'eq',
 			0b001: 'lt',
 			0b010: 'gt',
+			0b011: 'ltn',
 			0b101: 'gte',
 			0b110: 'lte',
+			0b111: 'gtn',
 
 			0b1000: 'neq',
 			0b1001: 'nlt',
+			0b1011: 'nltn', # unobserved
 			0b1010: 'ngt',
 			0b1101: 'ngte',
 			0b1110: 'nlte',
+			0b1111: 'ngtn', # unobserved
 		}
 
 
@@ -4024,30 +4032,39 @@ MASK_DESCRIPTIONS = {
 # TODO
 # uses sr60 implicitly?
 @register
-class BlendDesc(InstructionDesc):
+class LdstTileDesc(InstructionDesc):
 	def __init__(self):
-		super().__init__('blend', size=8)
+		super().__init__('ld/st_tile', size=8)
 
-		self.add_constant(0, 7, 0x09)
+		self.add_constant(0, 6, 0x09)
 
-		# XXX: actually a source! ALUDstDesc's cache hint possibly a discard hint.
+		# Direction of the transfer, set for tilebuffer->register,
+		# clear for register->tilebuffer
+		self.add_operand(ImmediateDesc('load', 6, 1))
+
+		# If load is false, actually a source! ALUDstDesc's cache hint possibly a discard hint.
 		self.add_operand(ALUDstDesc('D', 60))
 
 		self.add_operand(EnumDesc('F', 24, 4, MEMORY_FORMATS))
-		self.add_operand(ImmediateDesc('rt', 32, 4))
+		self.add_operand(ImmediateDesc('rt', 32, 3))
+		self.add_operand(ImmediateDesc('u0', 35, 1))
 		self.add_operand(EnumDesc('mask', 36, 4, MASK_DESCRIPTIONS))
+
+	def map_to_alias(self, mnem, operands):
+		is_load = operands[0]
+		mnem = 'ld_tile' if is_load else 'st_tile'
+		return mnem, operands[1:]
 
 @register
 class LoadVarDesc(InstructionDesc):
-        documentation_html = '<p>The last four bytes are omitted if L=0.</p>'
-        def __init__(self):
-                super().__init__('ld_var', size=(4,8))
-
-                self.add_constant(0, 6, 0x21)
-                self.add_operand(ALUDstDesc('D', 60)) # TODO: confirm extension
-                self.add_operand(ImmediateDesc('perspective', 6, 1))
-                self.add_operand(ImmediateDesc('index', 16, 4)) # ??
-                self.add_operand(ImmediateDesc('mask', 28, 4)) # components to write, 0 writes all, 0xF never observed..
+	documentation_html = '<p>The last four bytes are omitted if L=0.</p>'
+	def __init__(self):
+		super().__init__('ld_var', size=(4, 8))
+		self.add_constant(0, 6, 0x21)
+		self.add_operand(ALUDstDesc('D', 60)) # TODO: confirm extension
+		self.add_operand(ImmediateDesc('perspective', 6, 1))
+		self.add_operand(ImmediateDesc('index', 16, 4)) # ??
+		self.add_operand(ImmediateDesc('mask', 28, 4)) # components to write, 0 writes all, 0xF never observed..
 
 @register
 class StoreToUniformInstructionDesc(InstructionDesc):
