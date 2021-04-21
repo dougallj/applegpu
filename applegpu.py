@@ -855,7 +855,7 @@ class ALUSrcDesc(AbstractSrcOperandDesc):
 				assert (value & 1) == 0
 				r = Reg64(value >> 1)
 			elif self._allow32() and (flags & 0b1100) in (0b1000, 0b1100):
-				assert (value & 1) == 0
+#				assert (value & 1) == 0
 				r = Reg32(value >> 1)
 			elif (flags & 0b1100) in (0b0000, 0b1000, 0b1100):
 				r = Reg16(value)
@@ -1433,7 +1433,7 @@ class BranchOffsetDesc(FieldDesc):
 
 	def decode(self, fields):
 		v = fields[self.name]
-		assert (v & 1) == 0
+		#assert (v & 1) == 0
 		v = sign_extend(v, self.size)
 		return RelativeOffset(v)
 
@@ -1603,6 +1603,23 @@ class MemoryShiftDesc(OperandDesc):
 		self.add_field(42, 2, self.name)
 
 	def decode(self, fields):
+#		effective_shift = fields['s']
+#		if effective_shift == 3:
+#			effective_shift = 2
+#
+#		bit_packed = fields['F'] in (8, 12, 13)
+#		if bit_packed:
+#			effective_shift = 2
+#
+#		effective_shift += {
+#			1: 2, # i16
+#			2: 4, # i32
+#			3: 2, # i16?
+#			6: 2, # unorm16
+#			7: 2, # unorm16
+#		}.get(fields['F'], 1)
+#		return 'lsl %d' % (effective_shift) if effective_shift else ''
+
 		shift = fields[self.name]
 		return 'lsl %d' % (shift) if shift else ''
 
@@ -1937,6 +1954,36 @@ class ExReg32Desc(OperandDesc):
 	def decode(self, fields):
 		v = fields[self.name]
 		return Reg32(v)
+
+
+class ExReg64Desc(OperandDesc):
+	def __init__(self, name, start, start_ex):
+		super().__init__(name)
+
+		# TODO: this ignores the low bit. Kinda confusing?
+		self.add_merged_field(self.name, [
+			(start, 5, self.name),
+			(start_ex, 2, self.name + 'x'),
+		])
+
+	def decode(self, fields):
+		v = fields[self.name]
+		return Reg64(v)
+
+
+
+class ExReg16Desc(OperandDesc):
+	def __init__(self, name, start, start_ex):
+		super().__init__(name)
+
+		self.add_merged_field(self.name, [
+			(start, 6, self.name),
+			(start_ex, 2, self.name + 'x'),
+		])
+
+	def decode(self, fields):
+		v = fields[self.name]
+		return Reg16(v)
 
 
 
@@ -4014,11 +4061,11 @@ class DeviceLoadStoreInstructionDesc(MaskedInstructionDesc):
 	def __init__(self, name, bit):
 		super().__init__(name, size=(6, 8), length_bit_pos=47) # ?
 
-		self.add_operand(ImmediateDesc('u1', 26, 1))
+		#self.add_operand(ImmediateDesc('u1', 26, 1))
 		self.add_operand(ImmediateDesc('u2', 30, 1))
-		self.add_operand(ImmediateDesc('u3', 28, 2))
-		self.add_operand(ImmediateDesc('u4', 44, 3))
-		self.add_operand(ImmediateDesc('u5', 50, 2))
+		#self.add_operand(ImmediateDesc('u3', 28, 2))
+		#self.add_operand(ImmediateDesc('u4', 44, 3))
+		#self.add_operand(ImmediateDesc('u5', 50, 2))
 
 		self.add_constant(0, 7, 0b0000101 | (bit << 6))
 
@@ -4425,12 +4472,111 @@ class TextureLoadInstructionDesc(InstructionDesc):
 		super().__init__('texture_load', size=(8, 12))
 		self.add_constant(0, 8, 0x71)
 
+
+
+class SampleRegDesc(OperandDesc):
+	def __init__(self, name):
+		super().__init__(name)
+		self.add_merged_field(self.name, [
+			(9, 6, self.name),
+			(72, 2, self.name + 'x'),
+		])
+		self.add_field(8, 1, self.name + 't')
+
+	def decode_impl(self, fields, allow64):
+		flags = fields[self.name + 't']
+		value = fields[self.name]
+
+		count = bin(fields['mask']).count('1')
+
+		if flags == 0b0:
+			return RegisterTuple(Reg16(value + i) for i in range(count))
+		else:
+			return RegisterTuple(Reg32((value >> 1) + i) for i in range(count))
+
+	def decode(self, fields):
+		return self.decode_impl(fields, allow64=False)
+
+	def encode_string(self, fields, opstr):
+		regs = [try_parse_register(i) for i in opstr.split('_')]
+		if regs and all(isinstance(r, Reg32) for r in regs):
+			flags = 1
+			value = regs[0].n << 1
+		elif regs and all(isinstance(r, Reg16) for r in regs):
+			flags = 0
+			value = regs[0].n
+		else:
+			raise Exception('invalid MemoryRegDesc %r' % (opstr,))
+
+		for i in range(1, len(regs)):
+			if regs[i].n != regs[i-1].n + 1:
+				raise Exception('invalid MemoryRegDesc %r (must be consecutive)' % (opstr,))
+
+		if not 0 < len(regs) <= 4:
+			raise Exception('invalid MemoryRegDesc %r (1-4 values)' % (opstr,))
+
+		#fields['mask'] = (1 << len(regs)) - 1
+		fields[self.name] = value
+		fields[self.name + 't'] = flags
+
+
+class UReg64Desc(OperandDesc):
+	def __init__(self, name, start, start_ex):
+		super().__init__(name)
+
+		# TODO: this ignores the low bit. Kinda confusing?
+		self.add_merged_field(self.name, [
+			(start, 5, self.name)
+		])
+
+	def decode(self, fields):
+		v = fields[self.name]
+		return UReg64(v * 2)
+
+
+SAMPLE_MASK_DESCRIPTIONS = {}
+for _i in range(1, 16):
+	SAMPLE_MASK_DESCRIPTIONS[_i] = ''
+	if _i & 1: SAMPLE_MASK_DESCRIPTIONS[_i] += 'x'
+	if _i & 2: SAMPLE_MASK_DESCRIPTIONS[_i] += 'y'
+	if _i & 4: SAMPLE_MASK_DESCRIPTIONS[_i] += 'z'
+	if _i & 8: SAMPLE_MASK_DESCRIPTIONS[_i] += 'w'
+
 @register
 class TextureSampleInstructionDesc(InstructionDesc):
 	documentation_html = '<p>The last four bytes are omitted if L=0.</p>'
 	def __init__(self):
 		super().__init__('texture_sample', size=(8, 12))
 		self.add_constant(0, 8, 0x31)
+
+		self.add_operand(EnumDesc('mask', 48, 4, SAMPLE_MASK_DESCRIPTIONS))
+
+		# output, typically a group of 4.
+		self.add_operand(SampleRegDesc('R')) # destination/output
+
+		self.add_operand(UReg64Desc('U', 64, 5))
+
+		self.add_operand(ExReg32Desc('A', 32+1, 78))
+		self.add_operand(ExReg16Desc('B', 56, 92)) # 16
+
+
+		# TODO: probably different for 1D/3D?
+		self.add_operand(ExReg64Desc('C', 16+1, 74)) # co-ords
+
+		self.add_operand(ExReg16Desc('X', 24, 76))
+
+		# has offset?
+		self.add_operand(ImmediateDesc('Or', 91, 1))
+		self.add_operand(ExReg16Desc('Y', 80, 94))
+
+
+		# unknowns
+		self.add_operand(ImmediateDesc('q1', 38, 2))
+		self.add_operand(BinaryDesc('q2', 40, 7))
+		self.add_operand(BinaryDesc('q3', 53, 3))
+		self.add_operand(BinaryDesc('q4', 62, 2))
+
+
 
 @register
 class ThreadgroupBarriernstructionDesc(InstructionDesc):
