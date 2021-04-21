@@ -4030,8 +4030,9 @@ class BlendDesc(InstructionDesc):
 
 @register
 class LoadVarDesc(InstructionDesc):
+        documentation_html = '<p>The last four bytes are omitted if L=0.</p>'
         def __init__(self):
-                super().__init__('ld_var', size=8)
+                super().__init__('ld_var', size=(4,8))
 
                 self.add_constant(0, 6, 0x21)
                 self.add_operand(ALUDstDesc('D', 60)) # TODO: confirm extension
