@@ -3956,18 +3956,28 @@ MASK_DESCRIPTIONS = {
 # TODO
 # uses sr60 implicitly?
 @register
-class BlendDesc(InstructionDesc):
+class LdstTileDesc(InstructionDesc):
 	def __init__(self):
-		super().__init__('blend', size=8)
+		super().__init__('ld/st_tile', size=8)
 
-		self.add_constant(0, 7, 0x09)
+		self.add_constant(0, 6, 0x09)
 
-		# XXX: actually a source! ALUDstDesc's cache hint possibly a discard hint.
+		# Direction of the transfer, set for tilebuffer->register,
+		# clear for register->tilebuffer
+		self.add_operand(ImmediateDesc('load', 6, 1))
+
+		# If load is false, actually a source! ALUDstDesc's cache hint possibly a discard hint.
 		self.add_operand(ALUDstDesc('D', 60))
 
 		self.add_operand(EnumDesc('F', 24, 4, MEMORY_FORMATS))
-		self.add_operand(ImmediateDesc('rt', 32, 4))
+		self.add_operand(ImmediateDesc('rt', 32, 3))
+		self.add_operand(ImmediateDesc('u0', 35, 1))
 		self.add_operand(EnumDesc('mask', 36, 4, MASK_DESCRIPTIONS))
+
+	def map_to_alias(self, mnem, operands):
+		is_load = operands[0]
+		mnem = 'ld_tile' if is_load else 'st_tile'
+		return mnem, operands[1:]
 
 @register
 class LoadVarDesc(InstructionDesc):
