@@ -248,6 +248,26 @@ class SReg32(Register):
 	def get_bit_size(self):
 		return 32
 
+class TextureState(Register):
+	def __str__(self):
+		return 'ts%d' % (self.n)
+
+	def __repr__(self):
+		return self._repr('TextureState')
+
+	def get_bit_size(self):
+		return 32 # ?
+
+class SamplerState(Register):
+	def __str__(self):
+		return 'ss%d' % (self.n)
+
+	def __repr__(self):
+		return self._repr('SamplerState')
+
+	def get_bit_size(self):
+		return 32 # ?
+
 ureg16_names = []
 ureg32_names = []
 ureg64_names = []
@@ -4542,6 +4562,32 @@ for _i in range(1, 16):
 	if _i & 4: SAMPLE_MASK_DESCRIPTIONS[_i] += 'z'
 	if _i & 8: SAMPLE_MASK_DESCRIPTIONS[_i] += 'w'
 
+class ExTSDesc(OperandDesc):
+	def __init__(self, name, start, start_ex):
+		super().__init__(name)
+
+		self.add_merged_field(self.name, [
+			(start, 6, self.name),
+			(start_ex, 2, self.name + 'x'),
+		])
+
+	def decode(self, fields):
+		v = fields[self.name]
+		return TextureState(v)
+
+class ExSSDesc(OperandDesc):
+	def __init__(self, name, start, start_ex):
+		super().__init__(name)
+
+		self.add_merged_field(self.name, [
+			(start, 6, self.name),
+			(start_ex, 2, self.name + 'x'),
+		])
+
+	def decode(self, fields):
+		v = fields[self.name]
+		return SamplerState(v)
+
 @register
 class TextureSampleInstructionDesc(InstructionDesc):
 	documentation_html = '<p>The last four bytes are omitted if L=0.</p>'
@@ -4556,25 +4602,43 @@ class TextureSampleInstructionDesc(InstructionDesc):
 
 		self.add_operand(UReg64Desc('U', 64, 5))
 
-		self.add_operand(ExReg32Desc('A', 32+1, 78))
-		self.add_operand(ExReg16Desc('B', 56, 92)) # 16
+		# texture
+		# TODO: T is register if Tt = 1
+		self.add_operand(ImmediateDesc('Tt', 38, 1))
+		#self.add_operand(ExReg32Desc('T', 32+1, 78))
+		self.add_operand(ExTSDesc('T', 32, 78))
 
 
-		# TODO: probably different for 1D/3D?
+		# sampler
+		# TODO: S is register if Bt = 1
+		self.add_operand(ImmediateDesc('St', 62, 1))
+		#self.add_operand(ExReg16Desc('B', 56, 92))
+		self.add_operand(ExSSDesc('S', 56, 92))
+
+
+		# co-ordinates
+		self.add_operand(EnumDesc('q', 40, 3, {
+			0b000: 'tex_1d',
+			0b010: 'tex_2d',
+			0b101: 'tex_3d',
+		}))
+		self.add_operand(ImmediateDesc('Ct', 22, 1)) # TODO: discard hint for C
+		# TODO: different for 1D/3D
 		self.add_operand(ExReg64Desc('C', 16+1, 74)) # co-ords
 
-		self.add_operand(ExReg16Desc('X', 24, 76))
+		# TODO
+		#self.add_operand(ExReg16Desc('X', 24, 76))
 
 		# has offset?
 		self.add_operand(ImmediateDesc('Or', 91, 1))
-		self.add_operand(ExReg16Desc('Y', 80, 94))
+		#self.add_operand(ExReg16Desc('Y', 80, 94))
 
 
 		# unknowns
-		self.add_operand(ImmediateDesc('q1', 38, 2))
-		self.add_operand(BinaryDesc('q2', 40, 7))
+		#self.add_operand(ImmediateDesc('q1', 39, 1))
+		self.add_operand(BinaryDesc('q2', 43, 2))
 		self.add_operand(BinaryDesc('q3', 53, 3))
-		self.add_operand(BinaryDesc('q4', 62, 2))
+		self.add_operand(BinaryDesc('q4', 69, 1))
 
 
 
