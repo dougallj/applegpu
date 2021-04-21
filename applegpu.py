@@ -59,13 +59,23 @@ def sign_extend(v, bits):
 class Operand:
 	pass
 
+def _add_flags(base, flags):
+	parts = [base]
+	for i in flags:
+		if 'APPLEGPU_CRYPTIC' in os.environ and i == 'cache':
+			parts[0] = CACHE_HINT + parts[0]
+		else:
+			parts.append(i)
+	return '.'.join(parts)
+
+
 class RegisterTuple(Operand):
 	def __init__(self, registers):
 		self.registers = list(registers)
 		self.flags = []
 
 	def __str__(self):
-		return '_'.join(map(str, self.registers))
+		return _add_flags('_'.join(map(str, self.registers)), self.flags)
 
 	def __repr__(self):
 		return 'RegisterTuple(%r)' % self.registers
@@ -128,14 +138,7 @@ class Register(Operand):
 			self.flags = list(flags)
 
 	def _str(self, names):
-		parts = [names[self.n]]
-		for i in self.flags:
-			if 'APPLEGPU_CRYPTIC' in os.environ and i == 'cache':
-				parts[0] = CACHE_HINT + parts[0]
-			else:
-				parts.append(i)
-
-		return '.'.join(parts)
+		return _add_flags(names[self.n], self.flags)
 
 	def _repr(self, clsname):
 		if self.flags:
@@ -293,6 +296,12 @@ for _i in range(128):
 	reg128_names.append('r%d_r%d_r%d_r%d' % (_i, _i + 1, _i + 2, _i + 3))
 
 
+# TODO: is this the right number?
+ts_names = []
+ss_names = []
+for _i in range(256):
+	ts_names.append('ts%d' % _i)
+	ss_names.append('ss%d' % _i)
 
 
 
@@ -305,6 +314,8 @@ for _namelist, _c in [
 	(ureg16_names, UReg16),
 	(ureg32_names, UReg32),
 	(ureg64_names, UReg64),
+	(ts_names, TextureState),
+	(ss_names, SamplerState),
 ]:
 	for _i, _name in enumerate(_namelist):
 		registers_by_name[_name] = (_c, _i)
@@ -1794,16 +1805,14 @@ class MemoryBaseDesc(OperandDesc):
 		fields[self.name + 't'] = 1 if isinstance(r, UReg64) else 0
 		fields[self.name] = r.n << 1
 
-
-
 class MemoryRegDesc(OperandDesc):
-	def __init__(self, name):
+	def __init__(self, name, off=10, offx=40, offt=49):
 		super().__init__(name)
 		self.add_merged_field(self.name, [
-			(10, 6, self.name),
-			(40, 2, self.name + 'x'),
+			(off, 6, self.name),
+			(offx, 2, self.name + 'x'),
 		])
-		self.add_field(49, 1, self.name + 't')
+		self.add_field(offt, 1, self.name + 't')
 
 	def decode_impl(self, fields, allow64):
 		flags = fields[self.name + 't']
@@ -4482,66 +4491,15 @@ class ThreadgroupStoreInstructionDesc(ThreadgroupLoadStoreInstructionDesc):
 	def __init__(self):
 		super().__init__('threadgroup_store', 0)
 
-@register
-class TextureLoadInstructionDesc(InstructionDesc):
-	# TODO: can we illustrate size of the "optional" part in the bit-diagrams?
-
-	documentation_html = '<p>The last four bytes are omitted if L=0.</p>'
-	def __init__(self):
-		# TODO: docs will need to be changed to reflect the length flag
-		# behaviour here!
-		super().__init__('texture_load', size=(8, 12))
-		self.add_constant(0, 8, 0x71)
 
 
-
-class SampleRegDesc(OperandDesc):
+class SampleRegDesc(MemoryRegDesc):
 	def __init__(self, name):
-		super().__init__(name)
-		self.add_merged_field(self.name, [
-			(9, 6, self.name),
-			(72, 2, self.name + 'x'),
-		])
-		self.add_field(8, 1, self.name + 't')
-
-	def decode_impl(self, fields, allow64):
-		flags = fields[self.name + 't']
-		value = fields[self.name]
-
-		count = bin(fields['mask']).count('1')
-
-		if flags == 0b0:
-			return RegisterTuple(Reg16(value + i) for i in range(count))
-		else:
-			return RegisterTuple(Reg32((value >> 1) + i) for i in range(count))
-
-	def decode(self, fields):
-		return self.decode_impl(fields, allow64=False)
-
-	def encode_string(self, fields, opstr):
-		regs = [try_parse_register(i) for i in opstr.split('_')]
-		if regs and all(isinstance(r, Reg32) for r in regs):
-			flags = 1
-			value = regs[0].n << 1
-		elif regs and all(isinstance(r, Reg16) for r in regs):
-			flags = 0
-			value = regs[0].n
-		else:
-			raise Exception('invalid MemoryRegDesc %r' % (opstr,))
-
-		for i in range(1, len(regs)):
-			if regs[i].n != regs[i-1].n + 1:
-				raise Exception('invalid MemoryRegDesc %r (must be consecutive)' % (opstr,))
-
-		if not 0 < len(regs) <= 4:
-			raise Exception('invalid MemoryRegDesc %r (1-4 values)' % (opstr,))
-
-		#fields['mask'] = (1 << len(regs)) - 1
-		fields[self.name] = value
-		fields[self.name + 't'] = flags
+		super().__init__(name, off=9, offx=72, offt=8)
 
 
-class UReg64Desc(OperandDesc):
+
+class SampleURegDesc(OperandDesc):
 	def __init__(self, name, start, start_ex):
 		super().__init__(name)
 
@@ -4552,8 +4510,10 @@ class UReg64Desc(OperandDesc):
 
 	def decode(self, fields):
 		v = fields[self.name]
-		return UReg64(v * 2)
-
+		if fields['Tt'] & 1:
+			return UReg64(v * 2)
+		else:
+			return None
 
 SAMPLE_MASK_DESCRIPTIONS = {}
 for _i in range(1, 16):
@@ -4563,85 +4523,229 @@ for _i in range(1, 16):
 	if _i & 4: SAMPLE_MASK_DESCRIPTIONS[_i] += 'z'
 	if _i & 8: SAMPLE_MASK_DESCRIPTIONS[_i] += 'w'
 
-class ExTSDesc(OperandDesc):
-	def __init__(self, name, start, start_ex):
+class TextureDesc(OperandDesc):
+	def __init__(self, name, off=32, offx=78, offt=38):
 		super().__init__(name)
-
 		self.add_merged_field(self.name, [
-			(start, 6, self.name),
-			(start_ex, 2, self.name + 'x'),
+			(off, 6, self.name),
+			(offx, 2, self.name + 'x'),
 		])
+		self.add_field(offt, 2, self.name + 't')
 
 	def decode(self, fields):
-		v = fields[self.name]
-		return TextureState(v)
+		flags = fields[self.name + 't']
+		value = fields[self.name]
 
-class ExSSDesc(OperandDesc):
-	def __init__(self, name, start, start_ex):
+		if flags == 0b0:
+			return TextureState(value)
+		elif flags == 0b01:
+			return Reg16(value)
+		elif flags == 0b10:
+			if value == 0:
+				return Immediate(0)
+			else:
+				return Reg16(value)
+		elif flags == 0b11:
+			return Reg32(value >> 1)
+
+	def encode_string(self, fields, opstr):
+		r = try_parse_register(opstr)
+		if isinstance(r, Reg32):
+			value = r.n << 1
+			flags = 1
+		elif isinstance(r, TextureState):
+			value = r.n
+			flags = 0
+		else:
+			raise Exception('invalid TextureDesc %r' % (opstr,))
+
+		fields[self.name] = value
+		fields[self.name + 't'] = flags
+
+
+class SamplerDesc(OperandDesc):
+	def __init__(self, name, off=56, offx=92, offt=62):
 		super().__init__(name)
-
 		self.add_merged_field(self.name, [
-			(start, 6, self.name),
-			(start_ex, 2, self.name + 'x'),
+			(off, 6, self.name),
+			(offx, 2, self.name + 'x'),
 		])
+		self.add_field(offt, 1, self.name + 't')
 
 	def decode(self, fields):
-		v = fields[self.name]
-		return SamplerState(v)
+		flags = fields[self.name + 't']
+		value = fields[self.name]
 
-@register
-class TextureSampleInstructionDesc(InstructionDesc):
-	documentation_html = '<p>The last four bytes are omitted if L=0.</p>'
-	def __init__(self):
-		super().__init__('texture_sample', size=(8, 12))
-		self.add_constant(0, 8, 0x31)
+		if flags == 0b0:
+			return SamplerState(value)
+		else:
+			return Reg16(value)
+
+	def encode_string(self, fields, opstr):
+		r = try_parse_register(opstr)
+		if isinstance(r, Reg16):
+			value = r.n
+			flags = 1
+		elif isinstance(r, SamplerState):
+			value = r.n
+			flags = 0
+		else:
+			raise Exception('invalid SamplerDesc %r' % (opstr,))
+
+		fields[self.name] = value
+		fields[self.name + 't'] = flags
+
+TEX_TYPES = {
+	0b000: 'tex_1d',
+	0b001: 'tex_1d_array',
+	0b010: 'tex_2d',
+	0b011: 'tex_2d_array',
+	0b100: 'tex_2d_ms',
+	0b101: 'tex_3d',
+	0b110: 'tex_cube',
+	0b111: 'tex_cube_array',
+}
+
+
+TEX_SIZES = {
+	0b000: (1, 0), # tex_1d
+	0b001: (1, 1), # tex_1d_array
+	0b010: (2, 0), # tex_2d
+	0b011: (2, 1), # tex_2d_array
+	0b100: (2, 1), # tex_2d_ms
+	0b101: (3, 0), # tex_3d
+	0b110: (3, 0), # tex_cube
+	0b111: (3, 1), # tex_cube_array
+}
+
+class CoordsDesc(OperandDesc):
+	def __init__(self, name, off=16, offx=74, offt=22):
+		super().__init__(name)
+		self.add_merged_field(self.name, [
+			(off, 6, self.name),
+			(offx, 2, self.name + 'x'),
+		])
+		self.add_field(offt, 1, self.name + 't')
+
+	def decode(self, fields):
+		flags = fields[self.name + 't']
+		value = fields[self.name]
+
+		count, extra = TEX_SIZES[fields['n']]
+
+		# not really clear how the alignment requirement works
+		if extra:
+			t = RegisterTuple(Reg16((value) + i) for i in range(count * 2 + 1))
+		else:
+			t = RegisterTuple(Reg32((value >> 1) + i) for i in range(count))
+
+		if flags:
+			t.flags.append(DISCARD_FLAG)
+		return t
+
+class SampleOffDesc(OperandDesc):
+	def __init__(self, name, off=80, offx=94, offt=91):
+		super().__init__(name)
+		self.add_merged_field(self.name, [
+			(off, 6, self.name),
+			(offx, 2, self.name + 'x'),
+		])
+		self.add_field(offt, 1, self.name + 't')
+
+	def decode(self, fields):
+		flags = fields[self.name + 't']
+		value = fields[self.name]
+
+		if flags == 0b0:
+			return Immediate(0)
+		else:
+			return Reg16(value)
+
+class LodDesc(OperandDesc):
+	def __init__(self, name, off=16, offx=74): #, offt=22):
+		super().__init__(name)
+		self.add_merged_field(self.name, [
+			(off, 6, self.name),
+			(offx, 2, self.name + 'x'),
+		])
+		#self.add_field(offt, 1, self.name + 't')
+
+	def decode(self, fields):
+		#flags = fields[self.name + 't']
+		value = fields[self.name]
+		if fields['lod'] == 0:
+			return Immediate(0)
+		elif fields['lod'] in (0b1100, 0b0100):
+			count = TEX_SIZES[fields['n']][0]
+
+			count *= 2
+			if fields['lod'] == 0b1100:
+				count += 1
+
+			return RegisterTuple(Reg32((value >> 1) + i) for i in range(count))
+
+		else:
+			assert fields['lod'] == 0b110
+			return Reg16(value)
+
+class TextureLoadSampleBaseInstructionDesc(InstructionDesc):
+	def __init__(self, name):
+		super().__init__(name, size=(8, 12))
+
+		# unknowns
+		self.add_operand(ImmediateDesc('q1', 23, 1))
+		self.add_operand(BinaryDesc('q2', 30, 2))
+		self.add_operand(BinaryDesc('q3', 43, 5))
+		self.add_operand(BinaryDesc('q4', 69, 3))
+		self.add_operand(BinaryDesc('q5', 63, 1))
+		self.add_operand(BinaryDesc('q6', 86, 5))
 
 		self.add_operand(EnumDesc('mask', 48, 4, SAMPLE_MASK_DESCRIPTIONS))
 
 		# output, typically a group of 4.
 		self.add_operand(SampleRegDesc('R')) # destination/output
 
-		self.add_operand(UReg64Desc('U', 64, 5))
+		self.add_operand(SampleURegDesc('U', 64, 5))
 
 		# texture
-		# TODO: T is register if Tt = 1
-		self.add_operand(ImmediateDesc('Tt', 38, 1))
-		#self.add_operand(ExReg32Desc('T', 32+1, 78))
-		self.add_operand(ExTSDesc('T', 32, 78))
-
+		self.add_operand(TextureDesc('T'))
 
 		# sampler
-		# TODO: S is register if Bt = 1
-		self.add_operand(ImmediateDesc('St', 62, 1))
-		#self.add_operand(ExReg16Desc('B', 56, 92))
-		self.add_operand(ExSSDesc('S', 56, 92))
+		self.add_operand(SamplerDesc('S'))
 
+		self.add_operand(EnumDesc('n', 40, 3, TEX_TYPES))
 
 		# co-ordinates
-		self.add_operand(EnumDesc('q', 40, 3, {
-			0b000: 'tex_1d',
-			0b010: 'tex_2d',
-			0b101: 'tex_3d',
-		}))
-		self.add_operand(ImmediateDesc('Ct', 22, 1)) # TODO: discard hint for C
-		# TODO: different for 1D/3D
-		self.add_operand(ExReg64Desc('C', 16+1, 74)) # co-ords
+		self.add_operand(CoordsDesc('C'))
 
-		# TODO
-		#self.add_operand(ExReg16Desc('X', 24, 76))
+		# TODO: bit more to figure out here
+		self.add_operand(EnumDesc('lod', 52, 4, 
+		{
+			0b0000: 'auto_lod',
+			0b0110: 'lod_min',
+			0b0100: 'lod_grad',
+			0b1100: 'lod_grad_min',
+		}))
+		self.add_operand(LodDesc('D', 24, 76))
 
 		# has offset?
-		self.add_operand(ImmediateDesc('Or', 91, 1))
-		#self.add_operand(ExReg16Desc('Y', 80, 94))
+		self.add_operand(SampleOffDesc('O'))
 
+@register
+class TextureSampleInstructionDesc(TextureLoadSampleBaseInstructionDesc):
+	documentation_html = '<p>The last four bytes are omitted if L=0.</p>'
 
-		# unknowns
-		#self.add_operand(ImmediateDesc('q1', 39, 1))
-		self.add_operand(BinaryDesc('q2', 43, 2))
-		self.add_operand(BinaryDesc('q3', 53, 3))
-		self.add_operand(BinaryDesc('q4', 69, 1))
+	def __init__(self):
+		super().__init__('texture_sample')
+		self.add_constant(0, 8, 0x31)
 
+@register
+class TextureLoadInstructionDesc(TextureLoadSampleBaseInstructionDesc):
+	documentation_html = '<p>The last four bytes are omitted if L=0.</p>'
 
+	def __init__(self):
+		super().__init__('texture_load')
+		self.add_constant(0, 8, 0x71)
 
 @register
 class ThreadgroupBarriernstructionDesc(InstructionDesc):
