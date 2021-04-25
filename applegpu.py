@@ -4387,9 +4387,10 @@ class DeviceLoadInstructionDesc(DeviceLoadStoreInstructionDesc):
 class DeviceStoreInstructionDesc(DeviceLoadStoreInstructionDesc):
 	def __init__(self):
 		super().__init__('device_store', 1)
+		self.add_operand(ImmediateDesc('u6', 44, 1)) # store order thing?
 		self.add_constant(26, 1, 1) # u1
 		self.add_constant(28, 2, 0) # u3
-		self.add_constant(44, 3, 4) # u4
+		self.add_constant(45, 2, 2) # u4
 		self.add_constant(50, 2, 0) # u5
 
 @register
@@ -4405,12 +4406,11 @@ class DeviceLoadTodoInstructionDesc(DeviceLoadStoreInstructionDesc):
 class DeviceStoreTodoInstructionDesc(DeviceLoadStoreInstructionDesc):
 	def __init__(self):
 		super().__init__('device_store.TODO', 1)
+		self.add_operand(ImmediateDesc('u6', 44, 1)) # store order thing?
 		self.add_operand(ImmediateDesc('u1', 26, 1))
 		self.add_operand(ImmediateDesc('u3', 28, 2))
-		self.add_operand(ImmediateDesc('u4', 44, 3))
+		self.add_operand(ImmediateDesc('u4', 45, 2))
 		self.add_operand(ImmediateDesc('u5', 50, 2))
-
-
 
 class StackLoadStoreInstructionDesc(InstructionDesc):
 	def __init__(self, name, bit):
