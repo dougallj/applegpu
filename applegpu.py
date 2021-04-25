@@ -4108,11 +4108,7 @@ class DeviceLoadStoreInstructionDesc(MaskedInstructionDesc):
 	def __init__(self, name, bit):
 		super().__init__(name, size=(6, 8), length_bit_pos=47) # ?
 
-		#self.add_operand(ImmediateDesc('u1', 26, 1))
-		self.add_operand(ImmediateDesc('u2', 30, 1))
-		#self.add_operand(ImmediateDesc('u3', 28, 2))
-		#self.add_operand(ImmediateDesc('u4', 44, 3))
-		#self.add_operand(ImmediateDesc('u5', 50, 2))
+		self.add_operand(ImmediateDesc('g', 30, 1)) # wait group (scoreboarding)
 
 		self.add_constant(0, 7, 0b0000101 | (bit << 6))
 
@@ -4202,10 +4198,10 @@ class DeviceLoadInstructionDesc(DeviceLoadStoreInstructionDesc):
 	'''
 	def __init__(self):
 		super().__init__('device_load', 0)
-
-	#pseudocode = '''
-	#offset = 
-	#'''
+		self.add_constant(26, 1, 1) # u1
+		self.add_constant(28, 2, 0) # u3
+		self.add_constant(44, 3, 4) # u4
+		self.add_constant(50, 2, 0) # u5
 
 	def exec_thread(self, instr, corestate, thread):
 		fields = dict(self.decode_fields(instr))
@@ -4391,6 +4387,28 @@ class DeviceLoadInstructionDesc(DeviceLoadStoreInstructionDesc):
 class DeviceStoreInstructionDesc(DeviceLoadStoreInstructionDesc):
 	def __init__(self):
 		super().__init__('device_store', 1)
+		self.add_constant(26, 1, 1) # u1
+		self.add_constant(28, 2, 0) # u3
+		self.add_constant(44, 3, 4) # u4
+		self.add_constant(50, 2, 0) # u5
+
+@register
+class DeviceLoadTodoInstructionDesc(DeviceLoadStoreInstructionDesc):
+	def __init__(self):
+		super().__init__('device_load.TODO', 0)
+		self.add_operand(ImmediateDesc('u1', 26, 1))
+		self.add_operand(ImmediateDesc('u3', 28, 2))
+		self.add_operand(ImmediateDesc('u4', 44, 3))
+		self.add_operand(ImmediateDesc('u5', 50, 2))
+
+@register
+class DeviceStoreTodoInstructionDesc(DeviceLoadStoreInstructionDesc):
+	def __init__(self):
+		super().__init__('device_store.TODO', 1)
+		self.add_operand(ImmediateDesc('u1', 26, 1))
+		self.add_operand(ImmediateDesc('u3', 28, 2))
+		self.add_operand(ImmediateDesc('u4', 44, 3))
+		self.add_operand(ImmediateDesc('u5', 50, 2))
 
 
 
