@@ -3968,8 +3968,8 @@ for op1, op2, name in [
 
 
 for op, mnem in [
-	(0b10001, 'TODO.st_var'),
-	(0b10010001, 'TODO.st_var_final'),
+	(0b10001, 'st_var'),
+	(0b10010001, 'st_var_final'),
 ]:
 	o = InstructionDesc(mnem, size=4)
 	o.add_constant(0, 10, op)
@@ -3980,7 +3980,7 @@ for op, mnem in [
 	instruction_descriptors.append(o)
 
 
-o = InstructionDesc('TODO.writeout', size=4)
+o = InstructionDesc('writeout', size=4)
 o.add_constant(0, 8, 0b01001000)
 o.add_operand(ImmediateDesc('i', 8, 10)) # x: 26,2
 o.add_operand(ImmediateDesc('j', 22, 2)) # x: 26,2
@@ -4034,7 +4034,7 @@ MASK_DESCRIPTIONS = {
 @register
 class LdstTileDesc(InstructionDesc):
 	def __init__(self):
-		super().__init__('ld/st_tile', size=8)
+		super().__init__('TODO.ld/st_tile', size=(8, 10))
 
 		self.add_constant(0, 6, 0x09)
 
@@ -4043,12 +4043,18 @@ class LdstTileDesc(InstructionDesc):
 		self.add_operand(ImmediateDesc('load', 6, 1))
 
 		# If load is false, actually a source! ALUDstDesc's cache hint possibly a discard hint.
-		self.add_operand(ALUDstDesc('D', 60))
+		#self.add_operand(ALUDstDesc('D', 60))
+		self.add_operand(ThreadgroupMemoryRegDesc('R'))
 
 		self.add_operand(EnumDesc('F', 24, 4, MEMORY_FORMATS))
 		self.add_operand(ImmediateDesc('rt', 32, 3))
 		self.add_operand(ImmediateDesc('u0', 35, 1))
 		self.add_operand(EnumDesc('mask', 36, 4, MASK_DESCRIPTIONS))
+
+		self.add_operand(ImmediateDesc('A', [(28, 4, 'A'), (40, 2, 'Ax')]))
+		self.add_operand(ImmediateDesc('B', [(42, 6, 'B'), (56, 2, 'Bx')]))
+		self.add_operand(ImmediateDesc('Br', 22, 2))
+		self.add_operand(ImmediateDesc('C', [(16, 6, 'C'), (58, 2, 'Cx')]))
 
 	def map_to_alias(self, mnem, operands):
 		is_load = operands[0]
@@ -4416,7 +4422,7 @@ class StackLoadStoreInstructionDesc(InstructionDesc):
 	def __init__(self, name, bit):
 		super().__init__(name, size=(6, 8), length_bit_pos=47)
 		self.add_constant(0, 8, (bit << 7) | 0b00110101)
-		self.add_constant(16, 4, 0b0000)
+		#self.add_constant(16, 4, 0b0000)
 		#self.add_constant(24, 2, 0b01)
 
 		reg = MemoryRegDesc('R')
@@ -4483,7 +4489,7 @@ class StackGetPtrInstructionDesc(InstructionDesc):
 @register
 class StackAdjustInstructionDesc(InstructionDesc):
 	def __init__(self):
-		super().__init__('stack_adjust', size=(6, 8), length_bit_pos=47)
+		super().__init__('TODO.stack_adjust', size=(6, 8), length_bit_pos=47)
 		self.add_constant(0, 8, 0b10110101)
 		self.add_constant(16, 4, 0b0001)
 		self.add_constant(24, 2, 0b01)
@@ -4800,6 +4806,198 @@ class UnknownAfterSampling2InstructionDesc(InstructionDesc):
 		super().__init__('TODO.after_sampling2', size=2)
 		self.add_constant(0, 16, 0x62CC)
 
+@register
+class Unk30C0InstructionDesc(InstructionDesc):
+	def __init__(self):
+		super().__init__('TODO.unk30C0', size=6)
+		self.add_constant(0, 16, 0xC030)
+		self.add_operand(ImmediateDesc('imm', 16, 32))
+
+@register
+class Unk40C0InstructionDesc(InstructionDesc):
+	def __init__(self):
+		super().__init__('TODO.unk40C0', size=6)
+		self.add_constant(0, 8*6, 0xC040)
+
+@register
+class UnkC0000000InstructionDesc(InstructionDesc):
+	def __init__(self):
+		super().__init__('TODO.unkC0000000', size=4)
+		self.add_constant(0, 32, 0xC0)
+
+
+@register
+class Unk51InstructionDesc(InstructionDesc):
+	def __init__(self):
+		super().__init__('TODO.unk51', size=4)
+		self.add_constant(0, 31, 0x51)
+@register
+class UnkE8InstructionDesc(InstructionDesc):
+	def __init__(self):
+		super().__init__('TODO.unkE800', size=2)
+		self.add_constant(0, 16, 0xE8)
+@register
+class Unk0CInstructionDesc(InstructionDesc):
+	def __init__(self):
+		super().__init__('TODO.unk0C00', size=2)
+		self.add_constant(0, 16, 0x0C)
+
+@register
+class Unk28InstructionDesc(InstructionDesc):
+	def __init__(self):
+		super().__init__('TODO.unk28', size=2)
+		self.add_constant(0, 8, 0x28)
+		self.add_operand(ImmediateDesc('imm', 8, 8))
+
+@register
+class Unk20InstructionDesc(InstructionDesc):
+	def __init__(self):
+		super().__init__('TODO.br20', size=4)
+		self.add_constant(0, 16, 0x20)
+		self.add_operand(BranchOffsetDesc('off', 16, 8))
+		self.add_constant(24, 8, 0)
+
+@register
+class UnkB1InstructionDesc(InstructionDesc):
+	documentation_html = '<p>The last four bytes are omitted if L=0.</p>'
+	def __init__(self):
+		super().__init__('TODO.unkB1', size=(6, 10))
+		self.add_constant(0, 8, 0xB1)
+		self.add_constant(16, 14, 0)
+		self.add_constant(38, 3, 0)
+		self.add_constant(48, 5, 0)
+		self.add_constant(58, 4, 0)
+		self.add_constant(68, 12, 0)
+
+class Reg32_4_4_Desc(OperandDesc):
+	def __init__(self, name, start, start2):
+		super().__init__(name)
+
+		self.add_merged_field(self.name, [
+			(start, 4, self.name),
+			(start2, 4, self.name + 'x'),
+		])
+
+	def decode(self, fields):
+		v = fields[self.name]
+		return Reg32(v >> 1)
+
+@register
+class StackAdjustTodoInstructionDesc(InstructionDesc):
+	def __init__(self):
+		super().__init__('TODO.stack_adjust2', size=(6, 8), length_bit_pos=47)
+		self.add_constant(0, 8, 0b10110101)
+		self.add_constant(16, 4, 0b0001)
+		self.add_constant(24, 2, 0b00)
+
+		self.add_operand(ImmediateDesc('i0', 8, 2))
+		self.add_operand(ImmediateDesc('i1', 26, 1))
+		self.add_operand(ImmediateDesc('i2', 36, 3))
+		self.add_operand(ImmediateDesc('i3', 44, 3))
+		self.add_operand(ImmediateDesc('i4', 50, 6))
+
+		self.add_operand(Reg32_4_4_Desc('r', 20, 32))
+
+@register
+class TodoSrThingInstructionDesc(MaskedInstructionDesc):
+	def __init__(self):
+		super().__init__('TODO.sr_thing', size=4)
+
+		self.add_constant(0, 7, 0b1110010)
+		self.add_constant(15, 1, 1)
+		self.add_operand(ALUDstDesc('D', 28))
+		self.add_operand(SReg32Desc('SR', 16, 26))
+
+@register
+class TodoPopExecInstructionDesc(MaskedInstructionDesc):
+	def __init__(self):
+		super().__init__('TODO.pop_exec2', size=6)
+		self.add_constant(0, 7, 0x52)
+		self.add_constant(9, 2, 3) # op
+		self.add_constant(13, 10, 0)
+		self.add_constant(23, 1, 1)
+
+		self.add_operand(ImplicitR0LDesc('D'))
+		self.add_operand(ImmediateDesc('n', 11, 2))
+
+@register
+class Unk75InstructionDesc(MaskedInstructionDesc):
+	def __init__(self):
+		super().__init__('TODO.unk75', size=8) # maybe: size=(6, 8), length_bit_pos=47)
+		self.add_constant(0, 8, 0x75)
+		self.add_constant(10, 1, 0)
+		self.add_constant(47, 1, 1)
+
+		self.add_constant(16, 4, 1)
+		self.add_constant(24, 2, 1)
+		self.add_constant(27, 3, 0)
+		self.add_constant(31, 1, 0)
+
+		self.add_operand(ExReg32Desc('R', 11, 40))
+		self.add_operand(StackAdjustmentDesc('v'))
+
+		self.add_operand(BinaryDesc('q1', 8, 2))
+		#self.add_operand(BinaryDesc('q2', 30, 2))
+		#self.add_operand(BinaryDesc('q3', 43, 5))
+		#self.add_operand(BinaryDesc('q4', 69, 3))
+		#self.add_operand(BinaryDesc('q5', 63, 1))
+		#self.add_operand(BinaryDesc('q6', 86, 5))
+
+		# TODO: 75 0A 10 05 10 80 12 00
+
+@register
+class Unk75AltInstructionDesc(MaskedInstructionDesc):
+	def __init__(self):
+		super().__init__('TODO.unk75_alt', size=8) # maybe: size=(6, 8), length_bit_pos=47)
+		self.add_constant(0, 8, 0x75)
+		self.add_constant(10, 1, 0)
+		self.add_constant(47, 1, 1)
+
+		#self.add_constant(16, 4, 1)
+		#self.add_constant(24, 2, 1)
+		#self.add_constant(27, 3, 0)
+		#self.add_constant(31, 1, 0)
+
+		self.add_operand(ExReg32Desc('R', 11, 40))
+		self.add_operand(StackAdjustmentDesc('v'))
+
+		self.add_operand(BinaryDesc('q1', 8, 2))
+		#self.add_operand(BinaryDesc('q2', 30, 2))
+		#self.add_operand(BinaryDesc('q3', 43, 5))
+		#self.add_operand(BinaryDesc('q4', 69, 3))
+		#self.add_operand(BinaryDesc('q5', 63, 1))
+		#self.add_operand(BinaryDesc('q6', 86, 5))
+
+		# TODO: 75 0A 10 05 10 80 12 00
+
+
+@register
+class UnkC1InstructionDesc(MaskedInstructionDesc):
+	def __init__(self):
+		super().__init__('TODO.unkC1', size=4)
+		self.add_constant(0, 8, 0xC1)
+		self.add_constant(15, 1, 0)
+
+@register
+class UnkF59InstructionDesc(MaskedInstructionDesc):
+	def __init__(self):
+		super().__init__('TODO.unkF59', size=2)
+		self.add_constant(0, 8, 0xF5)
+		self.add_constant(12, 4, 0x9)
+		self.add_operand(ImmediateDesc('a', 10, 2))
+		self.add_operand(ImmediateDesc('b', 8, 2))
+
+@register
+class UnkF503InstructionDesc(InstructionDesc):
+	def __init__(self):
+		super().__init__('TODO.unkF503', size=2)
+		self.add_constant(0, 16, 0x03F5)
+
+@register
+class UnkF533InstructionDesc(InstructionDesc):
+	def __init__(self):
+		super().__init__('TODO.unkF533', size=2)
+		self.add_constant(0, 16, 0x33F5)
 
 def get_instruction_descriptor(n):
 	for o in instruction_descriptors:
