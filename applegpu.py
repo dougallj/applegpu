@@ -271,6 +271,16 @@ class SamplerState(Register):
 	def get_bit_size(self):
 		return 32 # ?
 
+class CF(Register):
+	def __str__(self):
+		return 'cf%d' % (self.n)
+
+	def __repr__(self):
+		return self._repr('CF')
+
+	def get_bit_size(self):
+		return 32 # ?
+
 ureg16_names = []
 ureg32_names = []
 ureg64_names = []
@@ -299,9 +309,11 @@ for _i in range(128):
 # TODO: is this the right number?
 ts_names = []
 ss_names = []
+cf_names = []
 for _i in range(256):
 	ts_names.append('ts%d' % _i)
 	ss_names.append('ss%d' % _i)
+	cf_names.append('cf%d' % _i)
 
 
 
@@ -316,6 +328,7 @@ for _namelist, _c in [
 	(ureg64_names, UReg64),
 	(ts_names, TextureState),
 	(ss_names, SamplerState),
+	(cf_names, CF),
 ]:
 	for _i, _name in enumerate(_namelist):
 		registers_by_name[_name] = (_c, _i)
@@ -717,6 +730,7 @@ class ImplicitR0LDesc(AbstractDstOperandDesc):
 			fields[self.name + 't'] = flags
 			return
 		raise Exception('invalid ImplicitR0LDesc %r' % (opstr,))
+
 
 @document_operand
 class ALUDstDesc(AbstractDstOperandDesc):
@@ -4061,16 +4075,128 @@ class LdstTileDesc(InstructionDesc):
 		mnem = 'ld_tile' if is_load else 'st_tile'
 		return mnem, operands[1:]
 
+
+class VarRegisterDesc(OperandDesc):
+	def __init__(self, name):
+		super().__init__(name)
+		self.add_merged_field(self.name, [
+			(9, 6, self.name),
+			(56, 2, self.name + 'x'),
+		])
+		self.add_field(8, 1, self.name + 't')
+		self.add_field(30, 2, 'count')
+
+	def decode(self, fields):
+		flags = fields[self.name + 't']
+		value = fields[self.name]
+
+		count = fields['count']
+		if count == 0: count = 4
+
+		# not really clear how the alignment requirement works
+		if flags == 0:
+			t = RegisterTuple(Reg16((value) + i) for i in range(count))
+		else:
+			t = RegisterTuple(Reg32((value >> 1) + i) for i in range(count))
+
+		return t
+
+class VarTripleRegisterDesc(OperandDesc):
+	def __init__(self, name):
+		super().__init__(name)
+		self.add_merged_field(self.name, [
+			(9, 6, self.name),
+			(56, 2, self.name + 'x'),
+		])
+		self.add_field(8, 1, self.name + 't')
+		self.add_field(30, 2, 'count')
+
+	def decode(self, fields):
+		flags = fields[self.name + 't']
+		value = fields[self.name]
+
+		count = fields['count']
+		if count == 0: count = 4
+
+		count *= 3
+
+		# not really clear how the alignment requirement works
+		if flags == 0:
+			t = RegisterTuple(Reg16((value) + i) for i in range(count))
+		else:
+			t = RegisterTuple(Reg32((value >> 1) + i) for i in range(count))
+
+		return t
+
+class CFDesc(OperandDesc):
+	def __init__(self, name, off=16, offx=58): #, offt=62):
+		super().__init__(name)
+		self.add_merged_field(self.name, [
+			(off, 6, self.name),
+			(offx, 2, self.name + 'x'),
+		])
+		#self.add_field(offt, 1, self.name + 't')
+
+	def decode(self, fields):
+		#flags = fields[self.name + 't']
+		value = fields[self.name]
+
+		#if flags == 0b0:
+		return CF(value)
+
+class CFPerspectiveDesc(OperandDesc):
+	def __init__(self, name, off=24, offx=60): #, offt=62):
+		super().__init__(name)
+		self.add_merged_field(self.name, [
+			(off, 6, self.name),
+			(offx, 2, self.name + 'x'),
+		])
+		#self.add_field(offt, 1, self.name + 't')
+
+	def decode(self, fields):
+		#flags = fields[self.name + 't']
+		
+		if not fields['P']:
+			return ''
+
+		value = fields[self.name]
+
+		#if flags == 0b0:
+		return CF(value)
+
 @register
 class LoadVarDesc(InstructionDesc):
 	documentation_html = '<p>The last four bytes are omitted if L=0.</p>'
 	def __init__(self):
-		super().__init__('ld_var', size=(4, 8))
+		super().__init__('TODO.ld_var', size=(4, 8))
 		self.add_constant(0, 6, 0x21)
-		self.add_operand(ALUDstDesc('D', 60)) # TODO: confirm extension
-		self.add_operand(ImmediateDesc('perspective', 6, 1))
-		self.add_operand(ImmediateDesc('index', 16, 4)) # ??
-		self.add_operand(ImmediateDesc('mask', 28, 4)) # components to write, 0 writes all, 0xF never observed..
+		self.add_constant(7, 1, 0)
+		
+		self.add_operand(VarRegisterDesc('D'))
+
+		self.add_operand(EnumDesc('P', 6, 1, {
+			0: 'no_perspective',
+			1: 'perspective',
+		}))
+
+		self.add_operand(CFDesc('I', 16, 58))
+		self.add_operand(CFPerspectiveDesc('J', 24, 60))
+
+		self.add_operand(ImmediateDesc('q0', 32, 1))
+		self.add_operand(ImmediateDesc('q1', 46, 1))
+		self.add_operand(ImmediateDesc('q2', 48, 1)) # BinaryDesc?
+		self.add_operand(ImmediateDesc('q3', 49, 1))
+		self.add_operand(ImmediateDesc('q4', 52, 1))
+
+@register
+class LoadVarFlatDesc(InstructionDesc):
+	documentation_html = '<p>The last four bytes are omitted if L=0.</p>'
+	def __init__(self):
+		super().__init__('TODO.ld_var_flat', size=(4, 8))
+		self.add_constant(0, 6, 0x21)
+		self.add_constant(6, 2, 0b10)
+		self.add_operand(VarTripleRegisterDesc('D')) # TODO: confirm extension
+		self.add_operand(CFDesc('I', 16, 58))
 
 @register
 class StoreToUniformInstructionDesc(InstructionDesc):
