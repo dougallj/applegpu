@@ -39,6 +39,9 @@ SR_NAMES = {
 	53: 'simdgroup_index_in_threadgroup',
 	56: 'active_thread_index_in_quadgroup',
 	58: 'active_thread_index_in_simdgroup',
+        # In fragment shaders. Invert for front facing
+	62: 'backfacing',
+        # 80, 81 also used for calculating fragcoord.xy
 	80: 'thread_position_in_grid.x',
 	81: 'thread_position_in_grid.y',
 	82: 'thread_position_in_grid.z',
