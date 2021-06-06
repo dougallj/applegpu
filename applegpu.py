@@ -4188,7 +4188,10 @@ class LoadVarDesc(InstructionDesc):
 		self.add_operand(ImmediateDesc('q0', 32, 1))
 		self.add_operand(ImmediateDesc('q1', 46, 1))
 		self.add_operand(ImmediateDesc('q2', 48, 1)) # BinaryDesc?
-		self.add_operand(ImmediateDesc('q3', 49, 1))
+		self.add_operand(EnumDesc('centroid', 49, 1, {
+			0: 'no_centroid',
+			1: 'centroid'
+		}))
 		self.add_operand(ImmediateDesc('q4', 52, 1))
 
 @register
