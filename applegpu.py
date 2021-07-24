@@ -41,6 +41,7 @@ SR_NAMES = {
 	58: 'active_thread_index_in_simdgroup',
         # In fragment shaders. Invert for front facing
 	62: 'backfacing',
+	63: 'is_active_thread', # compare to zero for simd/quad_is_helper_thread
         # 80, 81 also used for calculating fragcoord.xy
 	80: 'thread_position_in_grid.x',
 	81: 'thread_position_in_grid.y',
