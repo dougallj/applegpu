@@ -3230,12 +3230,14 @@ class DfdxInstructionDesc(FUnaryInstructionDesc):
 	def __init__(self):
 		super().__init__('dfdx')
 		self.add_constant(28, 6, 0b000100)
+		self.add_field(46, 1, 'kill') # Kill helper invocations
 
 @register
 class DfdyInstructionDesc(FUnaryInstructionDesc):
 	def __init__(self):
 		super().__init__('dfdy')
 		self.add_constant(28, 6, 0b000110)
+		self.add_field(46, 1, 'kill') # Kill helper invocations
 
 @register
 class UnknownFUnaryInstructionDesc(FUnaryInstructionDesc):
