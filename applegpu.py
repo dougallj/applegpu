@@ -4851,11 +4851,13 @@ class LodDesc(OperandDesc):
 		value = fields[self.name]
 		if fields['lod'] == 0:
 			return Immediate(0)
-		elif fields['lod'] in (0b1100, 0b0100):
+		elif fields['lod'] in (0b100, 0b1100):
+			# Gradient descriptor
 			count = TEX_SIZES[fields['n']][0]
 
 			count *= 2
 			if fields['lod'] == 0b1100:
+				# ..with minimum
 				count += 1
 
 			return RegisterTuple(Reg32((value >> 1) + i) for i in range(count))
