@@ -5113,11 +5113,13 @@ class Unk75AltInstructionDesc(MaskedInstructionDesc):
 
 
 @register
-class UnkC1InstructionDesc(MaskedInstructionDesc):
+class SampleMaskInstructionDesc(MaskedInstructionDesc):
 	def __init__(self):
-		super().__init__('TODO.unkC1', size=4)
+		super().__init__('sample_mask', size=4)
 		self.add_constant(0, 8, 0xC1)
+		self.add_operand(ImmediateDesc('S', [(16, 6, 'S'), (26, 2, 'Sx')])) # Immediate sample mask
 		self.add_constant(15, 1, 0)
+		self.add_operand(ImmediateDesc('sample_mask_is_immediate', 23, 1))
 
 @register
 class UnkF59InstructionDesc(MaskedInstructionDesc):
