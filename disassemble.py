@@ -3,7 +3,7 @@ import sys
 import applegpu
 
 VERBOSE = False
-STOP_ON_STOP = False
+STOP_ON_STOP = True
 
 def disassemble(code):
 	p = 0

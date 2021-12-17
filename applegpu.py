@@ -39,6 +39,10 @@ SR_NAMES = {
 	53: 'simdgroup_index_in_threadgroup',
 	56: 'active_thread_index_in_quadgroup',
 	58: 'active_thread_index_in_simdgroup',
+        # In fragment shaders. Invert for front facing
+	62: 'backfacing',
+	63: 'is_active_thread', # compare to zero for simd/quad_is_helper_thread
+        # 80, 81 also used for calculating fragcoord.xy
 	80: 'thread_position_in_grid.x',
 	81: 'thread_position_in_grid.y',
 	82: 'thread_position_in_grid.z',
@@ -59,13 +63,23 @@ def sign_extend(v, bits):
 class Operand:
 	pass
 
+def _add_flags(base, flags):
+	parts = [base]
+	for i in flags:
+		if 'APPLEGPU_CRYPTIC' in os.environ and i == 'cache':
+			parts[0] = CACHE_HINT + parts[0]
+		else:
+			parts.append(i)
+	return '.'.join(parts)
+
+
 class RegisterTuple(Operand):
 	def __init__(self, registers):
 		self.registers = list(registers)
 		self.flags = []
 
 	def __str__(self):
-		return '_'.join(map(str, self.registers))
+		return _add_flags('_'.join(map(str, self.registers)), self.flags)
 
 	def __repr__(self):
 		return 'RegisterTuple(%r)' % self.registers
@@ -128,14 +142,7 @@ class Register(Operand):
 			self.flags = list(flags)
 
 	def _str(self, names):
-		parts = [names[self.n]]
-		for i in self.flags:
-			if 'APPLEGPU_CRYPTIC' in os.environ and i == 'cache':
-				parts[0] = CACHE_HINT + parts[0]
-			else:
-				parts.append(i)
-
-		return '.'.join(parts)
+		return _add_flags(names[self.n], self.flags)
 
 	def _repr(self, clsname):
 		if self.flags:
@@ -248,6 +255,36 @@ class SReg32(Register):
 	def get_bit_size(self):
 		return 32
 
+class TextureState(Register):
+	def __str__(self):
+		return 'ts%d' % (self.n)
+
+	def __repr__(self):
+		return self._repr('TextureState')
+
+	def get_bit_size(self):
+		return 32 # ?
+
+class SamplerState(Register):
+	def __str__(self):
+		return 'ss%d' % (self.n)
+
+	def __repr__(self):
+		return self._repr('SamplerState')
+
+	def get_bit_size(self):
+		return 32 # ?
+
+class CF(Register):
+	def __str__(self):
+		return 'cf%d' % (self.n)
+
+	def __repr__(self):
+		return self._repr('CF')
+
+	def get_bit_size(self):
+		return 32 # ?
+
 ureg16_names = []
 ureg32_names = []
 ureg64_names = []
@@ -273,6 +310,14 @@ for _i in range(128):
 	reg128_names.append('r%d_r%d_r%d_r%d' % (_i, _i + 1, _i + 2, _i + 3))
 
 
+# TODO: is this the right number?
+ts_names = []
+ss_names = []
+cf_names = []
+for _i in range(256):
+	ts_names.append('ts%d' % _i)
+	ss_names.append('ss%d' % _i)
+	cf_names.append('cf%d' % _i)
 
 
 
@@ -285,6 +330,9 @@ for _namelist, _c in [
 	(ureg16_names, UReg16),
 	(ureg32_names, UReg32),
 	(ureg64_names, UReg64),
+	(ts_names, TextureState),
+	(ss_names, SamplerState),
+	(cf_names, CF),
 ]:
 	for _i, _name in enumerate(_namelist):
 		registers_by_name[_name] = (_c, _i)
@@ -687,6 +735,7 @@ class ImplicitR0LDesc(AbstractDstOperandDesc):
 			return
 		raise Exception('invalid ImplicitR0LDesc %r' % (opstr,))
 
+
 @document_operand
 class ALUDstDesc(AbstractDstOperandDesc):
 	def __init__(self, name, bit_off_ex):
@@ -855,7 +904,7 @@ class ALUSrcDesc(AbstractSrcOperandDesc):
 				assert (value & 1) == 0
 				r = Reg64(value >> 1)
 			elif self._allow32() and (flags & 0b1100) in (0b1000, 0b1100):
-				assert (value & 1) == 0
+#				assert (value & 1) == 0
 				r = Reg32(value >> 1)
 			elif (flags & 0b1100) in (0b0000, 0b1000, 0b1100):
 				r = Reg16(value)
@@ -1433,7 +1482,7 @@ class BranchOffsetDesc(FieldDesc):
 
 	def decode(self, fields):
 		v = fields[self.name]
-		assert (v & 1) == 0
+		#assert (v & 1) == 0
 		v = sign_extend(v, self.size)
 		return RelativeOffset(v)
 
@@ -1611,6 +1660,23 @@ class MemoryShiftDesc(OperandDesc):
 		self.add_field(42, 2, self.name)
 
 	def decode(self, fields):
+#		effective_shift = fields['s']
+#		if effective_shift == 3:
+#			effective_shift = 2
+#
+#		bit_packed = fields['F'] in (8, 12, 13)
+#		if bit_packed:
+#			effective_shift = 2
+#
+#		effective_shift += {
+#			1: 2, # i16
+#			2: 4, # i32
+#			3: 2, # i16?
+#			6: 2, # unorm16
+#			7: 2, # unorm16
+#		}.get(fields['F'], 1)
+#		return 'lsl %d' % (effective_shift) if effective_shift else ''
+
 		shift = fields[self.name]
 		return 'lsl %d' % (shift) if shift else ''
 
@@ -1765,16 +1831,14 @@ class MemoryBaseDesc(OperandDesc):
 		fields[self.name + 't'] = 1 if isinstance(r, UReg64) else 0
 		fields[self.name] = r.n << 1
 
-
-
 class MemoryRegDesc(OperandDesc):
-	def __init__(self, name):
+	def __init__(self, name, off=10, offx=40, offt=49):
 		super().__init__(name)
 		self.add_merged_field(self.name, [
-			(10, 6, self.name),
-			(40, 2, self.name + 'x'),
+			(off, 6, self.name),
+			(offx, 2, self.name + 'x'),
 		])
-		self.add_field(49, 1, self.name + 't')
+		self.add_field(offt, 1, self.name + 't')
 
 	def decode_impl(self, fields, allow64):
 		flags = fields[self.name + 't']
@@ -1945,6 +2009,36 @@ class ExReg32Desc(OperandDesc):
 	def decode(self, fields):
 		v = fields[self.name]
 		return Reg32(v)
+
+
+class ExReg64Desc(OperandDesc):
+	def __init__(self, name, start, start_ex):
+		super().__init__(name)
+
+		# TODO: this ignores the low bit. Kinda confusing?
+		self.add_merged_field(self.name, [
+			(start, 5, self.name),
+			(start_ex, 2, self.name + 'x'),
+		])
+
+	def decode(self, fields):
+		v = fields[self.name]
+		return Reg64(v)
+
+
+
+class ExReg16Desc(OperandDesc):
+	def __init__(self, name, start, start_ex):
+		super().__init__(name)
+
+		self.add_merged_field(self.name, [
+			(start, 6, self.name),
+			(start_ex, 2, self.name + 'x'),
+		])
+
+	def decode(self, fields):
+		v = fields[self.name]
+		return Reg16(v)
 
 
 
@@ -3136,12 +3230,14 @@ class DfdxInstructionDesc(FUnaryInstructionDesc):
 	def __init__(self):
 		super().__init__('dfdx')
 		self.add_constant(28, 6, 0b000100)
+		self.add_field(46, 1, 'kill') # Kill helper invocations
 
 @register
 class DfdyInstructionDesc(FUnaryInstructionDesc):
 	def __init__(self):
 		super().__init__('dfdy')
 		self.add_constant(28, 6, 0b000110)
+		self.add_field(46, 1, 'kill') # Kill helper invocations
 
 @register
 class UnknownFUnaryInstructionDesc(FUnaryInstructionDesc):
@@ -3892,8 +3988,8 @@ for op1, op2, name in [
 
 
 for op, mnem in [
-	(0b10001, 'TODO.st_var'),
-	(0b10010001, 'TODO.st_var_final'),
+	(0b10001, 'st_var'),
+	(0b10010001, 'st_var_final'),
 ]:
 	o = InstructionDesc(mnem, size=4)
 	o.add_constant(0, 10, op)
@@ -3904,7 +4000,7 @@ for op, mnem in [
 	instruction_descriptors.append(o)
 
 
-o = InstructionDesc('TODO.writeout', size=4)
+o = InstructionDesc('writeout', size=4)
 o.add_constant(0, 8, 0b01001000)
 o.add_operand(ImmediateDesc('i', 8, 10)) # x: 26,2
 o.add_operand(ImmediateDesc('j', 22, 2)) # x: 26,2
@@ -3958,7 +4054,7 @@ MASK_DESCRIPTIONS = {
 @register
 class LdstTileDesc(InstructionDesc):
 	def __init__(self):
-		super().__init__('ld/st_tile', size=8)
+		super().__init__('TODO.ld/st_tile', size=(8, 10))
 
 		self.add_constant(0, 6, 0x09)
 
@@ -3967,28 +4063,152 @@ class LdstTileDesc(InstructionDesc):
 		self.add_operand(ImmediateDesc('load', 6, 1))
 
 		# If load is false, actually a source! ALUDstDesc's cache hint possibly a discard hint.
-		self.add_operand(ALUDstDesc('D', 60))
+		#self.add_operand(ALUDstDesc('D', 60))
+		self.add_operand(ThreadgroupMemoryRegDesc('R'))
 
 		self.add_operand(EnumDesc('F', 24, 4, MEMORY_FORMATS))
 		self.add_operand(ImmediateDesc('rt', 32, 3))
 		self.add_operand(ImmediateDesc('u0', 35, 1))
 		self.add_operand(EnumDesc('mask', 36, 4, MASK_DESCRIPTIONS))
 
+		self.add_operand(ImmediateDesc('A', [(28, 4, 'A'), (40, 2, 'Ax')]))
+		self.add_operand(ImmediateDesc('B', [(42, 6, 'B'), (56, 2, 'Bx')]))
+		self.add_operand(ImmediateDesc('Br', 22, 2))
+		self.add_operand(ImmediateDesc('C', [(16, 6, 'C'), (58, 2, 'Cx')]))
+
 	def map_to_alias(self, mnem, operands):
 		is_load = operands[0]
 		mnem = 'ld_tile' if is_load else 'st_tile'
 		return mnem, operands[1:]
 
+
+class VarRegisterDesc(OperandDesc):
+	def __init__(self, name):
+		super().__init__(name)
+		self.add_merged_field(self.name, [
+			(9, 6, self.name),
+			(56, 2, self.name + 'x'),
+		])
+		self.add_field(8, 1, self.name + 't')
+		self.add_field(30, 2, 'count')
+
+	def decode(self, fields):
+		flags = fields[self.name + 't']
+		value = fields[self.name]
+
+		count = fields['count']
+		if count == 0: count = 4
+
+		# not really clear how the alignment requirement works
+		if flags == 0:
+			t = RegisterTuple(Reg16((value) + i) for i in range(count))
+		else:
+			t = RegisterTuple(Reg32((value >> 1) + i) for i in range(count))
+
+		return t
+
+class VarTripleRegisterDesc(OperandDesc):
+	def __init__(self, name):
+		super().__init__(name)
+		self.add_merged_field(self.name, [
+			(9, 6, self.name),
+			(56, 2, self.name + 'x'),
+		])
+		self.add_field(8, 1, self.name + 't')
+		self.add_field(30, 2, 'count')
+
+	def decode(self, fields):
+		flags = fields[self.name + 't']
+		value = fields[self.name]
+
+		count = fields['count']
+		if count == 0: count = 4
+
+		count *= 3
+
+		# not really clear how the alignment requirement works
+		if flags == 0:
+			t = RegisterTuple(Reg16((value) + i) for i in range(count))
+		else:
+			t = RegisterTuple(Reg32((value >> 1) + i) for i in range(count))
+
+		return t
+
+class CFDesc(OperandDesc):
+	def __init__(self, name, off=16, offx=58): #, offt=62):
+		super().__init__(name)
+		self.add_merged_field(self.name, [
+			(off, 6, self.name),
+			(offx, 2, self.name + 'x'),
+		])
+		#self.add_field(offt, 1, self.name + 't')
+
+	def decode(self, fields):
+		#flags = fields[self.name + 't']
+		value = fields[self.name]
+
+		#if flags == 0b0:
+		return CF(value)
+
+class CFPerspectiveDesc(OperandDesc):
+	def __init__(self, name, off=24, offx=60): #, offt=62):
+		super().__init__(name)
+		self.add_merged_field(self.name, [
+			(off, 6, self.name),
+			(offx, 2, self.name + 'x'),
+		])
+		#self.add_field(offt, 1, self.name + 't')
+
+	def decode(self, fields):
+		#flags = fields[self.name + 't']
+		
+		if not fields['P']:
+			return ''
+
+		value = fields[self.name]
+
+		#if flags == 0b0:
+		return CF(value)
+
 @register
 class LoadVarDesc(InstructionDesc):
-        def __init__(self):
-                super().__init__('ld_var', size=(4, 8))
+	documentation_html = '<p>The last four bytes are omitted if L=0.</p>'
+	def __init__(self):
+		super().__init__('TODO.ld_var', size=(4, 8))
+		self.add_constant(0, 6, 0x21)
+		self.add_constant(7, 1, 0)
+		
+		self.add_operand(VarRegisterDesc('D'))
 
-                self.add_constant(0, 6, 0x21)
-                self.add_operand(ALUDstDesc('D', 60)) # TODO: confirm extension
-                self.add_operand(ImmediateDesc('perspective', 6, 1))
-                self.add_operand(ImmediateDesc('index', 16, 4)) # ??
-                self.add_operand(ImmediateDesc('mask', 28, 4)) # components to write, 0 writes all, 0xF never observed..
+		self.add_operand(EnumDesc('P', 6, 1, {
+			0: 'no_perspective',
+			1: 'perspective',
+		}))
+
+		self.add_operand(CFDesc('I', 16, 58))
+		self.add_operand(CFPerspectiveDesc('J', 24, 60))
+
+		self.add_operand(ImmediateDesc('q0', 32, 1))
+		self.add_operand(ImmediateDesc('q1', 46, 1))
+		self.add_operand(EnumDesc('sample', 48, 1, {
+			0: 'pixel',
+			1: 'sample'
+		}))
+		self.add_operand(EnumDesc('centroid', 49, 1, {
+			0: 'no_centroid',
+			1: 'centroid'
+		}))
+		self.add_operand(ImmediateDesc('q4', 52, 1))
+
+@register
+class LoadVarFlatDesc(InstructionDesc):
+	documentation_html = '<p>The last four bytes are omitted if L=0.</p>'
+	def __init__(self):
+		super().__init__('TODO.ld_var_flat', size=(4, 8))
+		self.add_constant(0, 6, 0x21)
+		self.add_constant(6, 2, 0b10)
+		self.add_operand(VarTripleRegisterDesc('D')) # TODO: confirm extension
+		self.add_operand(CFDesc('I', 16, 58))
 
 @register
 class StoreToUniformInstructionDesc(InstructionDesc):
@@ -4032,11 +4252,7 @@ class DeviceLoadStoreInstructionDesc(MaskedInstructionDesc):
 	def __init__(self, name, bit):
 		super().__init__(name, size=(6, 8), length_bit_pos=47) # ?
 
-		self.add_operand(ImmediateDesc('u1', 26, 1))
-		self.add_operand(ImmediateDesc('u2', 30, 1))
-		self.add_operand(ImmediateDesc('u3', 28, 2))
-		self.add_operand(ImmediateDesc('u4', 44, 3))
-		self.add_operand(ImmediateDesc('u5', 50, 2))
+		self.add_operand(ImmediateDesc('g', 30, 1)) # wait group (scoreboarding)
 
 		self.add_constant(0, 7, 0b0000101 | (bit << 6))
 
@@ -4126,10 +4342,10 @@ class DeviceLoadInstructionDesc(DeviceLoadStoreInstructionDesc):
 	'''
 	def __init__(self):
 		super().__init__('device_load', 0)
-
-	#pseudocode = '''
-	#offset = 
-	#'''
+		self.add_constant(26, 1, 1) # u1
+		self.add_constant(28, 2, 0) # u3
+		self.add_constant(44, 3, 4) # u4
+		self.add_constant(50, 2, 0) # u5
 
 	def exec_thread(self, instr, corestate, thread):
 		fields = dict(self.decode_fields(instr))
@@ -4315,14 +4531,36 @@ class DeviceLoadInstructionDesc(DeviceLoadStoreInstructionDesc):
 class DeviceStoreInstructionDesc(DeviceLoadStoreInstructionDesc):
 	def __init__(self):
 		super().__init__('device_store', 1)
+		self.add_operand(ImmediateDesc('u6', 44, 1)) # store order thing?
+		self.add_constant(26, 1, 1) # u1
+		self.add_constant(28, 2, 0) # u3
+		self.add_constant(45, 2, 2) # u4
+		self.add_constant(50, 2, 0) # u5
 
+@register
+class DeviceLoadTodoInstructionDesc(DeviceLoadStoreInstructionDesc):
+	def __init__(self):
+		super().__init__('device_load.TODO', 0)
+		self.add_operand(ImmediateDesc('u1', 26, 1))
+		self.add_operand(ImmediateDesc('u3', 28, 2))
+		self.add_operand(ImmediateDesc('u4', 44, 3))
+		self.add_operand(ImmediateDesc('u5', 50, 2))
 
+@register
+class DeviceStoreTodoInstructionDesc(DeviceLoadStoreInstructionDesc):
+	def __init__(self):
+		super().__init__('device_store.TODO', 1)
+		self.add_operand(ImmediateDesc('u6', 44, 1)) # store order thing?
+		self.add_operand(ImmediateDesc('u1', 26, 1))
+		self.add_operand(ImmediateDesc('u3', 28, 2))
+		self.add_operand(ImmediateDesc('u4', 45, 2))
+		self.add_operand(ImmediateDesc('u5', 50, 2))
 
 class StackLoadStoreInstructionDesc(InstructionDesc):
 	def __init__(self, name, bit):
 		super().__init__(name, size=(6, 8), length_bit_pos=47)
 		self.add_constant(0, 8, (bit << 7) | 0b00110101)
-		self.add_constant(16, 4, 0b0000)
+		#self.add_constant(16, 4, 0b0000)
 		#self.add_constant(24, 2, 0b01)
 
 		reg = MemoryRegDesc('R')
@@ -4389,7 +4627,7 @@ class StackGetPtrInstructionDesc(InstructionDesc):
 @register
 class StackAdjustInstructionDesc(InstructionDesc):
 	def __init__(self):
-		super().__init__('stack_adjust', size=(6, 8), length_bit_pos=47)
+		super().__init__('TODO.stack_adjust', size=(6, 8), length_bit_pos=47)
 		self.add_constant(0, 8, 0b10110101)
 		self.add_constant(16, 4, 0b0001)
 		self.add_constant(24, 2, 0b01)
@@ -4432,23 +4670,264 @@ class ThreadgroupStoreInstructionDesc(ThreadgroupLoadStoreInstructionDesc):
 	def __init__(self):
 		super().__init__('threadgroup_store', 0)
 
-@register
-class TextureLoadInstructionDesc(InstructionDesc):
-	# TODO: can we illustrate size of the "optional" part in the bit-diagrams?
 
-	documentation_html = '<p>The last four bytes are omitted if L=0.</p>'
-	def __init__(self):
-		# TODO: docs will need to be changed to reflect the length flag
-		# behaviour here!
-		super().__init__('texture_load', size=(8, 12))
-		self.add_constant(0, 8, 0x71)
+
+class SampleRegDesc(MemoryRegDesc):
+	def __init__(self, name):
+		super().__init__(name, off=9, offx=72, offt=8)
+
+
+
+class SampleURegDesc(OperandDesc):
+	def __init__(self, name, start, start_ex):
+		super().__init__(name)
+
+		# TODO: this ignores the low bit. Kinda confusing?
+		self.add_merged_field(self.name, [
+			(start, 5, self.name)
+		])
+
+	def decode(self, fields):
+		v = fields[self.name]
+		if fields['Tt'] & 1:
+			return UReg64(v * 2)
+		else:
+			return None
+
+SAMPLE_MASK_DESCRIPTIONS = {}
+for _i in range(1, 16):
+	SAMPLE_MASK_DESCRIPTIONS[_i] = ''
+	if _i & 1: SAMPLE_MASK_DESCRIPTIONS[_i] += 'x'
+	if _i & 2: SAMPLE_MASK_DESCRIPTIONS[_i] += 'y'
+	if _i & 4: SAMPLE_MASK_DESCRIPTIONS[_i] += 'z'
+	if _i & 8: SAMPLE_MASK_DESCRIPTIONS[_i] += 'w'
+
+class TextureDesc(OperandDesc):
+	def __init__(self, name, off=32, offx=78, offt=38):
+		super().__init__(name)
+		self.add_merged_field(self.name, [
+			(off, 6, self.name),
+			(offx, 2, self.name + 'x'),
+		])
+		self.add_field(offt, 2, self.name + 't')
+
+	def decode(self, fields):
+		flags = fields[self.name + 't']
+		value = fields[self.name]
+
+		if flags == 0b0:
+			return TextureState(value)
+		elif flags == 0b01:
+			return Reg16(value)
+		elif flags == 0b10:
+			if value == 0:
+				return Immediate(0)
+			else:
+				return Reg16(value)
+		elif flags == 0b11:
+			return Reg32(value >> 1)
+
+	def encode_string(self, fields, opstr):
+		r = try_parse_register(opstr)
+		if isinstance(r, Reg32):
+			value = r.n << 1
+			flags = 1
+		elif isinstance(r, TextureState):
+			value = r.n
+			flags = 0
+		else:
+			raise Exception('invalid TextureDesc %r' % (opstr,))
+
+		fields[self.name] = value
+		fields[self.name + 't'] = flags
+
+
+class SamplerDesc(OperandDesc):
+	def __init__(self, name, off=56, offx=92, offt=62):
+		super().__init__(name)
+		self.add_merged_field(self.name, [
+			(off, 6, self.name),
+			(offx, 2, self.name + 'x'),
+		])
+		self.add_field(offt, 1, self.name + 't')
+
+	def decode(self, fields):
+		flags = fields[self.name + 't']
+		value = fields[self.name]
+
+		if flags == 0b0:
+			return SamplerState(value)
+		else:
+			return Reg16(value)
+
+	def encode_string(self, fields, opstr):
+		r = try_parse_register(opstr)
+		if isinstance(r, Reg16):
+			value = r.n
+			flags = 1
+		elif isinstance(r, SamplerState):
+			value = r.n
+			flags = 0
+		else:
+			raise Exception('invalid SamplerDesc %r' % (opstr,))
+
+		fields[self.name] = value
+		fields[self.name + 't'] = flags
+
+TEX_TYPES = {
+	0b000: 'tex_1d',
+	0b001: 'tex_1d_array',
+	0b010: 'tex_2d',
+	0b011: 'tex_2d_array',
+	0b100: 'tex_2d_ms',
+	0b101: 'tex_3d',
+	0b110: 'tex_cube',
+	0b111: 'tex_cube_array',
+}
+
+
+TEX_SIZES = {
+	0b000: (1, 0), # tex_1d
+	0b001: (1, 1), # tex_1d_array
+	0b010: (2, 0), # tex_2d
+	0b011: (2, 1), # tex_2d_array
+	0b100: (2, 1), # tex_2d_ms
+	0b101: (3, 0), # tex_3d
+	0b110: (3, 0), # tex_cube
+	0b111: (3, 1), # tex_cube_array
+}
+
+class CoordsDesc(OperandDesc):
+	def __init__(self, name, off=16, offx=74, offt=22):
+		super().__init__(name)
+		self.add_merged_field(self.name, [
+			(off, 6, self.name),
+			(offx, 2, self.name + 'x'),
+		])
+		self.add_field(offt, 1, self.name + 't')
+
+	def decode(self, fields):
+		flags = fields[self.name + 't']
+		value = fields[self.name]
+
+		count, extra = TEX_SIZES[fields['n']]
+
+		# not really clear how the alignment requirement works
+		if extra:
+			t = RegisterTuple(Reg16((value) + i) for i in range(count * 2 + 1))
+		else:
+			t = RegisterTuple(Reg32((value >> 1) + i) for i in range(count))
+
+		if flags:
+			t.flags.append(DISCARD_FLAG)
+		return t
+
+class SampleOffDesc(OperandDesc):
+	def __init__(self, name, off=80, offx=94, offt=91):
+		super().__init__(name)
+		self.add_merged_field(self.name, [
+			(off, 6, self.name),
+			(offx, 2, self.name + 'x'),
+		])
+		self.add_field(offt, 1, self.name + 't')
+
+	def decode(self, fields):
+		flags = fields[self.name + 't']
+		value = fields[self.name]
+
+		if flags == 0b0:
+			return Immediate(0)
+		else:
+			return Reg16(value)
+
+class LodDesc(OperandDesc):
+	def __init__(self, name, off=16, offx=74): #, offt=22):
+		super().__init__(name)
+		self.add_merged_field(self.name, [
+			(off, 6, self.name),
+			(offx, 2, self.name + 'x'),
+		])
+		#self.add_field(offt, 1, self.name + 't')
+
+	def decode(self, fields):
+		#flags = fields[self.name + 't']
+		value = fields[self.name]
+		if fields['lod'] == 0:
+			return Immediate(0)
+		elif fields['lod'] in (0b100, 0b1100):
+			# Gradient descriptor
+			count = TEX_SIZES[fields['n']][0]
+
+			count *= 2
+			if fields['lod'] == 0b1100:
+				# ..with minimum
+				count += 1
+
+			return RegisterTuple(Reg32((value >> 1) + i) for i in range(count))
+
+		else:
+			assert fields['lod'] == 0b110
+			return Reg16(value)
+
+class TextureLoadSampleBaseInstructionDesc(InstructionDesc):
+	def __init__(self, name):
+		super().__init__(name, size=(8, 12))
+
+		# unknowns
+		self.add_operand(ImmediateDesc('q1', 23, 1))
+		self.add_operand(BinaryDesc('q2', 30, 2))
+		self.add_operand(BinaryDesc('q3', 43, 5))
+		self.add_operand(BinaryDesc('q5', 63, 1))
+		self.add_operand(BinaryDesc('q6', 86, 5))
+
+		self.add_operand(EnumDesc('mask', 48, 4, SAMPLE_MASK_DESCRIPTIONS))
+
+		self.add_operand(BinaryDesc('kill', 69, 3)) # Kill helper invocations if set to 1, clear for not
+
+		# output, typically a group of 4.
+		self.add_operand(SampleRegDesc('R')) # destination/output
+
+		self.add_operand(SampleURegDesc('U', 64, 5))
+
+		# texture
+		self.add_operand(TextureDesc('T'))
+
+		# sampler
+		self.add_operand(SamplerDesc('S'))
+
+		self.add_operand(EnumDesc('n', 40, 3, TEX_TYPES))
+
+		# co-ordinates
+		self.add_operand(CoordsDesc('C'))
+
+		# TODO: bit more to figure out here
+		self.add_operand(EnumDesc('lod', 52, 4, 
+		{
+			0b0000: 'auto_lod',
+			0b0110: 'lod_min',
+			0b0100: 'lod_grad',
+			0b1100: 'lod_grad_min',
+		}))
+		self.add_operand(LodDesc('D', 24, 76))
+
+		# has offset?
+		self.add_operand(SampleOffDesc('O'))
 
 @register
-class TextureSampleInstructionDesc(InstructionDesc):
+class TextureSampleInstructionDesc(TextureLoadSampleBaseInstructionDesc):
 	documentation_html = '<p>The last four bytes are omitted if L=0.</p>'
+
 	def __init__(self):
-		super().__init__('texture_sample', size=(8, 12))
+		super().__init__('texture_sample')
 		self.add_constant(0, 8, 0x31)
+
+@register
+class TextureLoadInstructionDesc(TextureLoadSampleBaseInstructionDesc):
+	documentation_html = '<p>The last four bytes are omitted if L=0.</p>'
+
+	def __init__(self):
+		super().__init__('texture_load')
+		self.add_constant(0, 8, 0x71)
 
 @register
 class ThreadgroupBarriernstructionDesc(InstructionDesc):
@@ -4468,6 +4947,200 @@ class UnknownAfterSampling2InstructionDesc(InstructionDesc):
 		super().__init__('TODO.after_sampling2', size=2)
 		self.add_constant(0, 16, 0x62CC)
 
+@register
+class Unk30C0InstructionDesc(InstructionDesc):
+	def __init__(self):
+		super().__init__('TODO.unk30C0', size=6)
+		self.add_constant(0, 16, 0xC030)
+		self.add_operand(ImmediateDesc('imm', 16, 32))
+
+@register
+class Unk40C0InstructionDesc(InstructionDesc):
+	def __init__(self):
+		super().__init__('TODO.unk40C0', size=6)
+		self.add_constant(0, 8*6, 0xC040)
+
+@register
+class UnkC0000000InstructionDesc(InstructionDesc):
+	def __init__(self):
+		super().__init__('TODO.unkC0000000', size=4)
+		self.add_constant(0, 32, 0xC0)
+
+
+@register
+class Unk51InstructionDesc(InstructionDesc):
+	def __init__(self):
+		super().__init__('TODO.unk51', size=4)
+		self.add_constant(0, 31, 0x51)
+@register
+class UnkE8InstructionDesc(InstructionDesc):
+	def __init__(self):
+		super().__init__('TODO.unkE800', size=2)
+		self.add_constant(0, 16, 0xE8)
+@register
+class Unk0CInstructionDesc(InstructionDesc):
+	def __init__(self):
+		super().__init__('TODO.unk0C00', size=2)
+		self.add_constant(0, 16, 0x0C)
+
+@register
+class Unk28InstructionDesc(InstructionDesc):
+	def __init__(self):
+		super().__init__('TODO.unk28', size=2)
+		self.add_constant(0, 8, 0x28)
+		self.add_operand(ImmediateDesc('imm', 8, 8))
+
+@register
+class Unk20InstructionDesc(InstructionDesc):
+	def __init__(self):
+		super().__init__('TODO.br20', size=4)
+		self.add_constant(0, 16, 0x20)
+		self.add_operand(BranchOffsetDesc('off', 16, 8))
+		self.add_constant(24, 8, 0)
+
+@register
+class UnkB1InstructionDesc(InstructionDesc):
+	documentation_html = '<p>The last four bytes are omitted if L=0.</p>'
+	def __init__(self):
+		super().__init__('TODO.unkB1', size=(6, 10))
+		self.add_constant(0, 8, 0xB1)
+		self.add_constant(16, 14, 0)
+		self.add_constant(38, 3, 0)
+		self.add_constant(48, 5, 0)
+		self.add_constant(58, 4, 0)
+		self.add_constant(68, 12, 0)
+
+class Reg32_4_4_Desc(OperandDesc):
+	def __init__(self, name, start, start2):
+		super().__init__(name)
+
+		self.add_merged_field(self.name, [
+			(start, 4, self.name),
+			(start2, 4, self.name + 'x'),
+		])
+
+	def decode(self, fields):
+		v = fields[self.name]
+		return Reg32(v >> 1)
+
+@register
+class StackAdjustTodoInstructionDesc(InstructionDesc):
+	def __init__(self):
+		super().__init__('TODO.stack_adjust2', size=(6, 8), length_bit_pos=47)
+		self.add_constant(0, 8, 0b10110101)
+		self.add_constant(16, 4, 0b0001)
+		self.add_constant(24, 2, 0b00)
+
+		self.add_operand(ImmediateDesc('i0', 8, 2))
+		self.add_operand(ImmediateDesc('i1', 26, 1))
+		self.add_operand(ImmediateDesc('i2', 36, 3))
+		self.add_operand(ImmediateDesc('i3', 44, 3))
+		self.add_operand(ImmediateDesc('i4', 50, 6))
+
+		self.add_operand(Reg32_4_4_Desc('r', 20, 32))
+
+@register
+class TodoSrThingInstructionDesc(MaskedInstructionDesc):
+	def __init__(self):
+		super().__init__('TODO.sr_thing', size=4)
+
+		self.add_constant(0, 7, 0b1110010)
+		self.add_constant(15, 1, 1)
+		self.add_operand(ALUDstDesc('D', 28))
+		self.add_operand(SReg32Desc('SR', 16, 26))
+
+@register
+class TodoPopExecInstructionDesc(MaskedInstructionDesc):
+	def __init__(self):
+		super().__init__('TODO.pop_exec2', size=6)
+		self.add_constant(0, 7, 0x52)
+		self.add_constant(9, 2, 3) # op
+		self.add_constant(13, 10, 0)
+		self.add_constant(23, 1, 1)
+
+		self.add_operand(ImplicitR0LDesc('D'))
+		self.add_operand(ImmediateDesc('n', 11, 2))
+
+@register
+class Unk75InstructionDesc(MaskedInstructionDesc):
+	def __init__(self):
+		super().__init__('TODO.unk75', size=8) # maybe: size=(6, 8), length_bit_pos=47)
+		self.add_constant(0, 8, 0x75)
+		self.add_constant(10, 1, 0)
+		self.add_constant(47, 1, 1)
+
+		self.add_constant(16, 4, 1)
+		self.add_constant(24, 2, 1)
+		self.add_constant(27, 3, 0)
+		self.add_constant(31, 1, 0)
+
+		self.add_operand(ExReg32Desc('R', 11, 40))
+		self.add_operand(StackAdjustmentDesc('v'))
+
+		self.add_operand(BinaryDesc('q1', 8, 2))
+		#self.add_operand(BinaryDesc('q2', 30, 2))
+		#self.add_operand(BinaryDesc('q3', 43, 5))
+		#self.add_operand(BinaryDesc('kill', 69, 3))
+		#self.add_operand(BinaryDesc('q5', 63, 1))
+		#self.add_operand(BinaryDesc('q6', 86, 5))
+
+		# TODO: 75 0A 10 05 10 80 12 00
+
+@register
+class Unk75AltInstructionDesc(MaskedInstructionDesc):
+	def __init__(self):
+		super().__init__('TODO.unk75_alt', size=8) # maybe: size=(6, 8), length_bit_pos=47)
+		self.add_constant(0, 8, 0x75)
+		self.add_constant(10, 1, 0)
+		self.add_constant(47, 1, 1)
+
+		#self.add_constant(16, 4, 1)
+		#self.add_constant(24, 2, 1)
+		#self.add_constant(27, 3, 0)
+		#self.add_constant(31, 1, 0)
+
+		self.add_operand(ExReg32Desc('R', 11, 40))
+		self.add_operand(StackAdjustmentDesc('v'))
+
+		self.add_operand(BinaryDesc('q1', 8, 2))
+		#self.add_operand(BinaryDesc('q2', 30, 2))
+		#self.add_operand(BinaryDesc('q3', 43, 5))
+		#self.add_operand(BinaryDesc('kill', 69, 3))
+		#self.add_operand(BinaryDesc('q5', 63, 1))
+		#self.add_operand(BinaryDesc('q6', 86, 5))
+
+		# TODO: 75 0A 10 05 10 80 12 00
+
+
+@register
+class SampleMaskInstructionDesc(MaskedInstructionDesc):
+	def __init__(self):
+		super().__init__('sample_mask', size=4)
+		self.add_constant(0, 8, 0xC1)
+		self.add_operand(ImmediateDesc('S', [(16, 6, 'S'), (26, 2, 'Sx')])) # Immediate sample mask
+		self.add_constant(15, 1, 0)
+		self.add_operand(ImmediateDesc('sample_mask_is_immediate', 23, 1))
+
+@register
+class UnkF59InstructionDesc(MaskedInstructionDesc):
+	def __init__(self):
+		super().__init__('TODO.unkF59', size=2)
+		self.add_constant(0, 8, 0xF5)
+		self.add_constant(12, 4, 0x9)
+		self.add_operand(ImmediateDesc('a', 10, 2))
+		self.add_operand(ImmediateDesc('b', 8, 2))
+
+@register
+class UnkF503InstructionDesc(InstructionDesc):
+	def __init__(self):
+		super().__init__('TODO.unkF503', size=2)
+		self.add_constant(0, 16, 0x03F5)
+
+@register
+class UnkF533InstructionDesc(InstructionDesc):
+	def __init__(self):
+		super().__init__('TODO.unkF533', size=2)
+		self.add_constant(0, 16, 0x33F5)
 
 def get_instruction_descriptor(n):
 	for o in instruction_descriptors:
