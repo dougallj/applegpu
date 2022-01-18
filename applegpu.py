@@ -4198,7 +4198,7 @@ class LoadVarDesc(InstructionDesc):
 			0: 'no_centroid',
 			1: 'centroid'
 		}))
-		self.add_operand(ImmediateDesc('q4', 52, 1))
+		self.add_operand(BinaryDesc('kill', 52, 1)) # Kill helper invocations 
 
 @register
 class LoadVarFlatDesc(InstructionDesc):
