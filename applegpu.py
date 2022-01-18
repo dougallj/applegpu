@@ -4864,9 +4864,8 @@ class LodDesc(OperandDesc):
 				count += 1
 
 			return RegisterTuple(Reg32((value >> 1) + i) for i in range(count))
-
 		else:
-			assert fields['lod'] == 0b110
+			assert fields['lod'] in (0b110, 0b101)
 			return Reg16(value)
 
 class TextureLoadSampleBaseInstructionDesc(InstructionDesc):
@@ -4904,6 +4903,7 @@ class TextureLoadSampleBaseInstructionDesc(InstructionDesc):
 		self.add_operand(EnumDesc('lod', 52, 4, 
 		{
 			0b0000: 'auto_lod',
+			0b0101: 'auto_lod_bias',
 			0b0110: 'lod_min',
 			0b0100: 'lod_grad',
 			0b1100: 'lod_grad_min',
