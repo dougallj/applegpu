@@ -1,3 +1,4 @@
+__pycache__/
 hwtestbed/*.bin
 hwtestbed/*.air
 hwtestbed/*.metallib
