@@ -1,6 +1,6 @@
 all: compute.metallib main replacer.dylib
 
-compute.metallib: Compute.metal
+compute.metallib: compute.metal
 	xcrun -sdk macosx metal -c  -std=osx-metal2.0 -O3 -o compute.air $^
 	xcrun -sdk macosx metallib -o $@ compute.air
 
