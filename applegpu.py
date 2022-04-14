@@ -1970,7 +1970,7 @@ class MovImm16InstructionDesc(MaskedInstructionDesc):
 	documentation_begin_group = 'Move Instructions'
 	documentation_name = 'Move 16-bit Immediate'
 	def __init__(self):
-		super().__init__('mov', size=(4, 6))
+		super().__init__('mov_imm', size=(4, 6))
 
 		self.add_constant(0, 7, 0b1100010)
 
@@ -1999,7 +1999,7 @@ class MovImm16InstructionDesc(MaskedInstructionDesc):
 class MovImm32InstructionDesc(MaskedInstructionDesc):
 	documentation_name = 'Move 32-bit Immediate'
 	def __init__(self):
-		super().__init__('mov', size=(6, 8))
+		super().__init__('mov_imm', size=(6, 8))
 		self.add_constant(0, 7, 0b1100010)
 
 		self.add_operand(ALUDstDesc('D', 60))
@@ -2618,7 +2618,7 @@ class BitopInstructionDesc(MaskedInstructionDesc):
 		}
 		self.unary_aliases = {
 			'1010': 'not',
-			'0101': 'bitop_mov',
+			'0101': 'mov',
 		}
 		self.aliases = set(self.binary_aliases.values()) | set(self.unary_aliases.values())
 
