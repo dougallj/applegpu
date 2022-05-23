@@ -4876,7 +4876,7 @@ class TextureLoadSampleBaseInstructionDesc(InstructionDesc):
 		self.add_operand(ImmediateDesc('q1', 23, 1))
 		self.add_operand(BinaryDesc('q2', 30, 2))
 		self.add_operand(BinaryDesc('q3', 43, 5))
-		self.add_operand(BinaryDesc('q5', 63, 1))
+		self.add_operand(BinaryDesc('slot', 63, 1)) # slot to pass to wait
 		self.add_operand(BinaryDesc('q6', 86, 5))
 
 		self.add_operand(EnumDesc('mask', 48, 4, SAMPLE_MASK_DESCRIPTIONS))
