@@ -4822,7 +4822,7 @@ class CoordsDesc(OperandDesc):
 			t.flags.append(DISCARD_FLAG)
 		return t
 
-class SampleOffDesc(OperandDesc):
+class SampleCompareOffDesc(OperandDesc):
 	def __init__(self, name, off=80, offx=94, offt=91):
 		super().__init__(name)
 		self.add_merged_field(self.name, [
@@ -4835,10 +4835,19 @@ class SampleOffDesc(OperandDesc):
 		flags = fields[self.name + 't']
 		value = fields[self.name]
 
-		if flags == 0b0:
-			return Immediate(0)
-		else:
-			return Reg16(value)
+		has_offset = bool(flags)
+		has_compare = bool(fields['compare'])
+
+		regs = []
+
+		if has_compare:
+			regs += [Reg32(value >> 1)]
+			value += 2
+		if has_offset:
+			regs += [Reg16(value)]
+			value += 1
+
+		return RegisterTuple(regs)
 
 class LodDesc(OperandDesc):
 	def __init__(self, name, off=16, offx=74): #, offt=22):
@@ -4872,11 +4881,13 @@ class TextureLoadSampleBaseInstructionDesc(InstructionDesc):
 	def __init__(self, name):
 		super().__init__(name, size=(8, 12))
 
+		self.add_operand(ImmediateDesc('compare', 23, 1))
 		# unknowns
-		self.add_operand(ImmediateDesc('q1', 23, 1))
 		self.add_operand(BinaryDesc('q2', 30, 2))
 		self.add_operand(BinaryDesc('q3', 43, 5))
 		self.add_operand(BinaryDesc('slot', 63, 1)) # slot to pass to wait
+
+		# Bottom bit set with compares?
 		self.add_operand(BinaryDesc('q6', 86, 5))
 
 		self.add_operand(EnumDesc('mask', 48, 4, SAMPLE_MASK_DESCRIPTIONS))
@@ -4911,7 +4922,7 @@ class TextureLoadSampleBaseInstructionDesc(InstructionDesc):
 		self.add_operand(LodDesc('D', 24, 76))
 
 		# has offset?
-		self.add_operand(SampleOffDesc('O'))
+		self.add_operand(SampleCompareOffDesc('O'))
 
 @register
 class TextureSampleInstructionDesc(TextureLoadSampleBaseInstructionDesc):
