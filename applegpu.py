@@ -1946,7 +1946,6 @@ class ThreadgroupMemoryBaseDesc(OperandDesc):
 	def decode_impl(self, fields, allow64):
 		flags = fields[self.name + 't']
 		value = fields[self.name]
-		assert (value & 1) == 0
 		if flags == 0b00:
 			return Reg16(value)
 		elif flags == 0b10:
