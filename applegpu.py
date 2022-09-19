@@ -2917,13 +2917,13 @@ class FSaturatableInstructionDesc(SaturatableInstructionDesc):
 		self.operands['D'].set_thread(fields, corestate, thread, result)
 
 @register
-class FMAddInstructionDesc(FSaturatableInstructionDesc):
+class FMAdd32InstructionDesc(FSaturatableInstructionDesc):
 	documentation_begin_group = 'Floating-Point Arithmetic'
 
 	documentation_name =  'Floating-Point Fused Multiply-Add'
 
 	def __init__(self):
-		super().__init__('fmadd', size=(6, 8))
+		super().__init__('fmadd32', size=(6, 8))
 		self.add_constant(0, 6, 0b111010)
 		self.add_operand(FloatDstDesc('D', 60))
 
@@ -2968,7 +2968,7 @@ class FMAdd16InstructionDesc(FSaturatableInstructionDesc):
 		self.add_operand(FloatSrc16Desc('B', 28, 56))
 		self.add_operand(FloatSrc16Desc('C', 40, 54))
 
-	pseudocode = FMAddInstructionDesc.pseudocode
+	pseudocode = FMAdd32InstructionDesc.pseudocode
 
 	def exec_thread(self, instr, corestate, thread):
 		fields = dict(self.decode_fields(instr))
@@ -3005,11 +3005,11 @@ class F16BinaryInstructionDesc(FSaturatableInstructionDesc):
 		self.add_operand(FloatSrc16Desc('B', 28, 40))
 
 @register
-class FAddInstructionDesc(FBinaryInstructionDesc):
+class FAdd32InstructionDesc(FBinaryInstructionDesc):
 	documentation_name = 'Floating-Point Add'
 
 	def __init__(self):
-		super().__init__('fadd', 0b101010)
+		super().__init__('fadd32', 0b101010)
 
 	pseudocode = '''
 	for each active thread:
@@ -3038,7 +3038,7 @@ class FAdd16InstructionDesc(F16BinaryInstructionDesc):
 	def __init__(self):
 		super().__init__('fadd16', 0b100110)
 
-	pseudocode = FAddInstructionDesc.pseudocode
+	pseudocode = FAdd32InstructionDesc.pseudocode
 
 	def exec_thread(self, instr, corestate, thread):
 		# TODO: test
@@ -3052,11 +3052,11 @@ class FAdd16InstructionDesc(F16BinaryInstructionDesc):
 		self.saturate_and_set_thread_result(fields, corestate, thread, result64)
 
 @register
-class FMulInstructionDesc(FBinaryInstructionDesc):
+class FMul32InstructionDesc(FBinaryInstructionDesc):
 	documentation_name = 'Floating-Point Multiply'
 
 	def __init__(self):
-		super().__init__('fmul', 0b011010)
+		super().__init__('fmul32', 0b011010)
 
 	pseudocode = '''
 	for each active thread:
@@ -3085,7 +3085,7 @@ class FMul16InstructionDesc(F16BinaryInstructionDesc):
 	def __init__(self):
 		super().__init__('fmul16', 0b010110)
 
-	pseudocode = FMulInstructionDesc.pseudocode
+	pseudocode = FMul32InstructionDesc.pseudocode
 
 	def exec_thread(self, instr, corestate, thread):
 		# TODO: test
