@@ -4170,10 +4170,10 @@ class CFPerspectiveDesc(OperandDesc):
 		return CF(value)
 
 @register
-class LoadVarDesc(InstructionDesc):
+class IterDesc(InstructionDesc):
 	documentation_html = '<p>The last four bytes are omitted if L=0.</p>'
 	def __init__(self):
-		super().__init__('TODO.ld_var', size=(4, 8))
+		super().__init__('TODO.iter', size=(4, 8))
 		self.add_constant(0, 6, 0x21)
 		self.add_constant(7, 1, 0)
 		
@@ -4200,10 +4200,10 @@ class LoadVarDesc(InstructionDesc):
 		self.add_operand(BinaryDesc('kill', 52, 1)) # Kill helper invocations 
 
 @register
-class LoadVarFlatDesc(InstructionDesc):
+class LoadCFDesc(InstructionDesc):
 	documentation_html = '<p>The last four bytes are omitted if L=0.</p>'
 	def __init__(self):
-		super().__init__('TODO.ld_var_flat', size=(4, 8))
+		super().__init__('TODO.ldcf', size=(4, 8))
 		self.add_constant(0, 6, 0x21)
 		self.add_constant(6, 2, 0b10)
 		self.add_operand(VarTripleRegisterDesc('D')) # TODO: confirm extension
