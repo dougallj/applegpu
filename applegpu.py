@@ -4171,7 +4171,11 @@ class CFPerspectiveDesc(OperandDesc):
 
 @register
 class IterDesc(InstructionDesc):
-	documentation_html = '<p>The last four bytes are omitted if L=0.</p>'
+	documentation_html = '''
+	<p>The last four bytes are omitted if L=0.</p>
+	<p>If forwarding is enabled, the result of the varying must be consumed directly as coordinates by a subsequent texture_sample instruction.</p>
+	'''
+
 	def __init__(self):
 		super().__init__('TODO.iter', size=(4, 8))
 		self.add_constant(0, 6, 0x21)
@@ -4188,7 +4192,10 @@ class IterDesc(InstructionDesc):
 		self.add_operand(CFPerspectiveDesc('J', 24, 60))
 
 		self.add_operand(ImmediateDesc('q0', 32, 1))
-		self.add_operand(ImmediateDesc('q1', 46, 1))
+		self.add_operand(EnumDesc('forwarding', 46, 1, {
+			0: 'forward',
+			1: 'no_forward'
+		}))
 		self.add_operand(EnumDesc('sample', 48, 1, {
 			0: 'pixel',
 			1: 'sample'
