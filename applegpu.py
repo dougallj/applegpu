@@ -4090,6 +4090,9 @@ class LdstTileDesc(InstructionDesc):
 	pass Σ_i=1...n (1 &lt;&lt; N). To store to all samples, pass 0xFF as the
 	special "broadcast" value. Although MSAA 8x may not be used, this
 	value might be optimized specially.
+
+	The offset into shared memory is specified by O. This is in bytes and
+	does not take into account multisampling or tile size.
 	</p>'''
 
 	def __init__(self):
@@ -4106,11 +4109,10 @@ class LdstTileDesc(InstructionDesc):
 		self.add_operand(ThreadgroupMemoryRegDesc('R'))
 
 		self.add_operand(EnumDesc('F', 24, 4, MEMORY_FORMATS))
-		self.add_operand(ImmediateDesc('rt', 32, 3))
 		self.add_operand(ImmediateDesc('u0', 35, 1))
 		self.add_operand(EnumDesc('mask', 36, 4, MASK_DESCRIPTIONS))
 
-		self.add_operand(ImmediateDesc('A', [(28, 4, 'A'), (40, 2, 'Ax')]))
+		self.add_operand(ImmediateDesc('O', [(28, 7, 'A'), (40, 2, 'Ax')]))
 		self.add_operand(SampleMaskDesc('S'))
 		self.add_operand(ImmediateDesc('C', [(16, 6, 'C'), (58, 2, 'Cx')]))
 
