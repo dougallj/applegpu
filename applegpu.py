@@ -4065,10 +4065,7 @@ MEMORY_FORMATS = {
 }
 
 MASK_DESCRIPTIONS = {
-	0b0001: 'single',
-	0b0011: 'pair',
-	0b0111: 'triple',
-	0b1111: 'quad',
+	a: ('x' if a & 1 else '') + ('y' if a & 2 else '') + ('z' if a & 4 else '') + ('w' if a & 8 else '') for a in range(16)
 }
 
 # TODO
