@@ -46,8 +46,11 @@ def disassemble(code):
 
 
 if len(sys.argv) > 1:
-	code = open(sys.argv[1], 'rb').read()
+	f = open(sys.argv[1], 'rb')
+	if len(sys.argv) > 2:
+		f.seek(int(sys.argv[2], 0))
+	code = f.read()
 	disassemble(code)
 else:
-	print('usage: python3 disassemble.py [filename]')
+	print('usage: python3 disassemble.py [filename] [offset]')
 	exit(1)
