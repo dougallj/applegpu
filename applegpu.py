@@ -74,15 +74,31 @@ def _add_flags(base, flags):
 
 
 class RegisterTuple(Operand):
-	def __init__(self, registers):
+	def __init__(self, registers, flags=None):
 		self.registers = list(registers)
-		self.flags = []
+		if flags is None:
+			self.flags = []
+		else:
+			self.flags = list(flags)
 
 	def __str__(self):
 		return _add_flags('_'.join(map(str, self.registers)), self.flags)
 
 	def __repr__(self):
 		return 'RegisterTuple(%r)' % self.registers
+
+	def __repr__(self):
+		return 'RegisterTuple(%r)' % self.registers
+
+	def __getitem__(self, i):
+		return self.registers[i]
+
+	def get_with_flags(self, i):
+		r = self[i]
+		return r.__class__(r.n, flags=self.flags)
+
+	def __len__(self):
+		return len(self.registers)
 
 	def get_bit_size(self):
 		raise NotImplementedError('get_bit_size')
@@ -355,6 +371,26 @@ def try_parse_register(s):
 
 	return c(n, flags=flags)
 
+def try_parse_register_tuple(s):
+	flags = []
+	if s.startswith(CACHE_HINT):
+		s = s[1:]
+		flags.append(CACHE_FLAG)
+	parts = s.split('.')
+	regs = [try_parse_register(i) for i in parts[0].split('_')]
+	if not all(isinstance(r, Reg32) for r in regs) and not all(isinstance(r, Reg16) for r in regs):
+		return None
+	if any(i.flags for i in regs):
+		return None
+	if not all(regs[i].n + 1 == regs[i+1].n for i in range(len(regs)-1)):
+		return None
+
+	for i in parts[1:]:
+		if i not in OPERAND_FLAGS:
+			return None
+		flags.append(i)
+
+	return RegisterTuple(regs, flags=flags)
 
 SIMD_WIDTH = 32
 
@@ -752,21 +788,34 @@ class ALUDstDesc(AbstractDstOperandDesc):
 	def _allow32(self):
 		return True
 
+	def _paired(self):
+		return False
+
 	def decode(self, fields):
 		flags = fields[self.name + 't']
 		value = fields[self.name]
 
 		if flags & 2 and self._allow32():
 			if (value & 1) and self._allow64():
+				assert not self._paired()
 				r = Reg64(value >> 1)
 			else:
-				r = Reg32(value >> 1)
+				if self._paired():
+					r = RegisterTuple(Reg32((value >> 1) + i) for i in range(2))
+				else:
+					r = Reg32(value >> 1)
 		else:
-			r = Reg16(value)
+			if self._paired():
+				r = RegisterTuple(Reg16(value + i) for i in range(2))
+			else:
+				r = Reg16(value)
 
 		return add_dest_hint_modifier(r, flags)
 
 	def encode(self, fields, operand):
+		if self._paired() and isinstance(operand, RegisterTuple):
+			# TODO: validate
+			operand = operand.get_with_flags(0)
 		flags = 0
 		value = 0
 		if isinstance(operand, BaseReg):
@@ -804,11 +853,22 @@ class ALUDstDesc(AbstractDstOperandDesc):
 	'''
 
 	def encode_string(self, fields, opstr):
+		if self._paired():
+			regs = try_parse_register_tuple(opstr)
+			if regs and len(regs) == 2:
+				return self.encode(fields, regs)
+			raise Exception('invalid paired ALUDstDesc %r' % (opstr,))
+
 		reg = try_parse_register(opstr)
 		if reg:
 			return self.encode(fields, reg)
 		raise Exception('invalid ALUDstDesc %r' % (opstr,))
 
+
+class PairedALUDstDesc(ALUDstDesc):
+	# converts r0 <-> r0_r1 and r0h <-> r0h_r1l
+	def _paired(self):
+		return True
 
 @document_operand
 class ALUDst64Desc(ALUDstDesc):
@@ -880,6 +940,9 @@ class ALUSrcDesc(AbstractSrcOperandDesc):
 	def _allow64(self):
 		return False
 
+	def _paired(self):
+		return False
+
 	def decode_impl(self, fields, allow64):
 		flags = fields[self.name + 't']
 		value = fields[self.name]
@@ -902,12 +965,19 @@ class ALUSrcDesc(AbstractSrcOperandDesc):
 		elif (flags & 0b11) != 0: # in (0b0001, 0b0010, 0b0011):
 			if self._allow64() and (flags & 0b1100) == 0b1100:
 				assert (value & 1) == 0
+				assert not self._paired()
 				r = Reg64(value >> 1)
 			elif self._allow32() and (flags & 0b1100) in (0b1000, 0b1100):
 #				assert (value & 1) == 0
-				r = Reg32(value >> 1)
+				if self._paired():
+					r = RegisterTuple(Reg32((value >> 1) + i) for i in range(2))
+				else:
+					r = Reg32(value >> 1)
 			elif (flags & 0b1100) in (0b0000, 0b1000, 0b1100):
-				r = Reg16(value)
+				if self._paired():
+					r = RegisterTuple(Reg16(value + i) for i in range(2))
+				else:
+					r = Reg16(value)
 			else:
 				return
 			return add_hint_modifier(r, flags & 0b11)
@@ -915,6 +985,12 @@ class ALUSrcDesc(AbstractSrcOperandDesc):
 			print('TODO: ' + format(flags, '04b'))
 
 	def encode(self, fields, operand):
+		if self._paired():
+			if isinstance(operand, (Reg16,Reg32)):
+				raise Exception('invalid paired operand %r' % (operand,))
+			elif isinstance(operand, RegisterTuple):
+				# TODO: validate
+				operand = operand.get_with_flags(0)
 		flags = 0
 		value = 0
 		if isinstance(operand, (UReg16, UReg32)):
@@ -952,7 +1028,7 @@ class ALUSrcDesc(AbstractSrcOperandDesc):
 		elif isinstance(operand, Immediate):
 			flags = 0
 			if not 0 <= operand.value < 256:
-				raise Exception('out of range immediate' % (operand,))
+				raise Exception('out of range immediate %r' % (operand,))
 			value = operand.value
 		else:
 			raise Exception('invalid ALUSrcDesc %r' % (operand,))
@@ -994,9 +1070,14 @@ class ALUSrcDesc(AbstractSrcOperandDesc):
 	'''
 
 	def encode_string(self, fields, opstr):
-		reg = try_parse_register(opstr)
-		if reg:
-			return self.encode(fields, reg)
+		if self._paired():
+			regs = try_parse_register_tuple(opstr)
+			if regs and len(regs) == 2:
+				return self.encode(fields, regs)
+		else:
+			reg = try_parse_register(opstr)
+			if reg:
+				return self.encode(fields, reg)
 
 		value = try_parse_integer(opstr)
 
@@ -1201,7 +1282,7 @@ class CmpselSrcDesc(AbstractSrcOperandDesc):
 		elif isinstance(operand, Immediate):
 			flags = 0b100
 			if not 0 <= operand.value < 256:
-				raise Exception('out of range immediate' % (operand,))
+				raise Exception('out of range immediate %r' % (operand,))
 			value = operand.value
 		else:
 			raise Exception('invalid CmpselSrcDesc %r' % (operand,))
@@ -1222,9 +1303,11 @@ class CmpselSrcDesc(AbstractSrcOperandDesc):
 
 @document_operand
 class FloatSrcDesc(ALUSrcDesc):
-	def __init__(self, name, bit_off, bit_off_ex):
+	def __init__(self, name, bit_off, bit_off_ex, bit_off_m=None):
 		super().__init__(name, bit_off, bit_off_ex)
-		self.add_field(bit_off + 6 + self._type_size(), 2, self.name + 'm')
+		if bit_off_m is None:
+			bit_off_m = bit_off + 6 + self._type_size()
+		self.add_field(bit_off_m, 2, self.name + 'm')
 
 	def decode_immediate(self, fields, value):
 		return Immediate(decode_float_immediate(value))
@@ -1283,6 +1366,13 @@ class FloatSrcDesc(ALUSrcDesc):
 			if NEGATE_FLAG in operand.flags:
 				m |= 2
 		fields[self.name + 'm'] = m
+
+
+class PairedFloatSrcDesc(FloatSrcDesc):
+	# converts r0 <-> r0_r1 and r0h <-> r0h_r1l
+	# TODO: not clear is uniform registers supported
+	def _paired(self):
+		return True
 
 helper_pseudocode = '''
 
@@ -3887,6 +3977,45 @@ class SimdShuffleDownInstructionDesc(BaseSimdShuffleInstructionDesc):
 		self.operands['D'].set_thread(fields, corestate, thread, result)
 
 
+@register
+class SimdMatrixFMadd32InstructionDesc(MaskedInstructionDesc):
+	def __init__(self):
+		super().__init__('simd_matrix_fmadd32', size=8)
+		self.add_constant(0, 7, 0x6f)
+		self.add_constant(15, 1, 0)
+		self.add_constant(27, 1, 1)
+		self.add_constant(26, 1, 1)
+
+		self.add_operand(PairedALUDstDesc('D', 60))
+
+		# These seem to be ALUSrc, accepting either 16-bit or 32-bit,
+		# but paired (i.e. R0L -> R0, or R0 -> R0_R1).
+
+		self.add_operand(PairedFloatSrcDesc('A', 16, 58, 52))
+		self.add_operand(PairedFloatSrcDesc('B', 28, 56))
+		self.add_operand(PairedFloatSrcDesc('C', 40, 54))
+		self.add_constant(63, 1, 1)
+
+
+@register
+class SimdMatrixFMadd16InstructionDesc(MaskedInstructionDesc):
+	def __init__(self):
+		super().__init__('simd_matrix_fmadd16', size=8)
+		self.add_constant(0, 7, 0x6f)
+		self.add_constant(15, 1, 0)
+		self.add_constant(27, 1, 1)
+		self.add_constant(26, 1, 0)
+
+		self.add_operand(PairedALUDstDesc('D', 60))
+
+		# These seem to be ALUSrc, accepting either 16-bit or 32-bit,
+		# but paired (i.e. R0L -> R0, or R0 -> R0_R1).
+
+		self.add_operand(PairedFloatSrcDesc('A', 16, 58, 52))
+		self.add_operand(PairedFloatSrcDesc('B', 28, 56))
+		self.add_operand(PairedFloatSrcDesc('C', 40, 54))
+		self.add_constant(63, 1, 1)
+
 for op1, op2, op3, name in [
 	(0b0, 0b00, 0b00, 'quad_shuffle'),
 	(0b0, 0b11, 0b00, 'quad_shuffle_down'),
@@ -3933,7 +4062,15 @@ for op1, op2, name in [
 	(0, 0b0000000000000000, 'quad_and'),
 	(0, 0b0001000000000000, 'quad_or'),
 	(0, 0b0010000000000000, 'quad_xor'),
-	(1, 0b0000000000000000, 'quad_sum'),
+
+	(1, 0b0000000000000000, 'quad_iadd'),
+	(0, 0b0000000000000100, 'quad_fadd'),
+	(0, 0b0001000000000100, 'quad_fmul'),
+
+	(1, 0b0000000000010000, 'quad_prefix_iadd'),
+	(0, 0b0000000000010100, 'quad_prefix_fadd'),
+	(0, 0b0001000000010100, 'quad_prefix_fmul'),
+
 	(1, 0b0110000000000000, 'quad_min.u'),
 	(1, 0b0111000000000000, 'quad_max.u'),
 	(1, 0b0010000000000000, 'quad_min.s'),
@@ -3944,15 +4081,21 @@ for op1, op2, name in [
 	(0, 0b0000000000001000, 'simd_and'),
 	(0, 0b0001000000001000, 'simd_or'),
 	(0, 0b0010000000001000, 'simd_xor'),
-	(1, 0b0000000000001000, 'simd_sum'),
+
+	(1, 0b0000000000001000, 'simd_iadd'),
+	(0, 0b0000000000001100, 'simd_fadd'),
+	(0, 0b0001000000001100, 'simd_fmul'),
+
+	(1, 0b0000000000011000, 'simd_prefix_iadd'),
+	(0, 0b0000000000011100, 'simd_prefix_fadd'),
+	(0, 0b0001000000011100, 'simd_prefix_fmul'),
+
 	(1, 0b0110000000001000, 'simd_min.u'),
 	(1, 0b0111000000001000, 'simd_max.u'),
 	(1, 0b0010000000001000, 'simd_min.s'),
 	(1, 0b0011000000001000, 'simd_max.s'),
 	(0, 0b0010000000001100, 'simd_min.f'),
 	(0, 0b0011000000001100, 'simd_max.f'),
-
-	#(1, 0b0000000000011000, '?')
 
 	# generic must come last as fallback
 	(None, None, 'simd_op'),
