@@ -5183,26 +5183,28 @@ class SamplerDesc(OperandDesc):
 		fields[self.name + 't'] = flags
 
 TEX_TYPES = {
-	0b000: 'tex_1d',
-	0b001: 'tex_1d_array',
-	0b010: 'tex_2d',
-	0b011: 'tex_2d_array',
-	0b100: 'tex_2d_ms',
-	0b101: 'tex_3d',
-	0b110: 'tex_cube',
-	0b111: 'tex_cube_array',
+	0b0000: 'tex_1d',
+	0b0001: 'tex_1d_array',
+	0b0010: 'tex_2d',
+	0b0011: 'tex_2d_array',
+	0b0100: 'tex_2d_ms',
+	0b0101: 'tex_3d',
+	0b0110: 'tex_cube',
+	0b0111: 'tex_cube_array',
+	0b1000: 'tex_2d_ms_array',
 }
 
 
 TEX_SIZES = {
-	0b000: (1, 0), # tex_1d
-	0b001: (1, 1), # tex_1d_array
-	0b010: (2, 0), # tex_2d
-	0b011: (2, 1), # tex_2d_array
-	0b100: (2, 1), # tex_2d_ms
-	0b101: (3, 0), # tex_3d
-	0b110: (3, 0), # tex_cube
-	0b111: (3, 1), # tex_cube_array
+	0b0000: (1, 0), # tex_1d
+	0b0001: (1, 1), # tex_1d_array
+	0b0010: (2, 0), # tex_2d
+	0b0011: (2, 1), # tex_2d_array
+	0b0100: (2, 1), # tex_2d_ms
+	0b0101: (3, 0), # tex_3d
+	0b0110: (3, 0), # tex_cube
+	0b0111: (3, 1), # tex_cube_array
+	0b1000: (2, 2), # tex_2d_ms_array
 }
 
 class CoordsDesc(OperandDesc):
@@ -5302,7 +5304,7 @@ class TextureLoadSampleBaseInstructionDesc(InstructionDesc):
 
 		self.add_operand(EnumDesc('mask', 48, 4, SAMPLE_MASK_DESCRIPTIONS))
 
-		self.add_operand(BinaryDesc('kill', 69, 3)) # Kill helper invocations if set to 1, clear for not
+		self.add_operand(BinaryDesc('kill', 69, 2)) # Kill helper invocations if set to 1, clear for not
 
 		# output, typically a group of 4.
 		self.add_operand(SampleRegDesc('R')) # destination/output
@@ -5315,7 +5317,10 @@ class TextureLoadSampleBaseInstructionDesc(InstructionDesc):
 		# sampler
 		self.add_operand(SamplerDesc('S'))
 
-		self.add_operand(EnumDesc('n', 40, 3, TEX_TYPES))
+		self.add_operand(EnumDesc('n', [
+			(40, 3, 'n'),
+			(71, 1, 'nx')
+		], None, TEX_TYPES))
 
 		# co-ordinates
 		self.add_operand(CoordsDesc('C'))
