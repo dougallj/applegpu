@@ -5,4 +5,6 @@ hwtestbed/*.metallib
 hwtestbed/*.dylib
 hwtestbed/main
 hwtestbed/cache
+compiler_explorer_tools/metal-archive-extractor
+compiler_explorer_tools/metal-compile-tool
 .DS_Store

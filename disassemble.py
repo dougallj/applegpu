@@ -44,13 +44,13 @@ def disassemble(code):
 		assert length >= 2 and length % 2 == 0
 		p += length
 
-
-if len(sys.argv) > 1:
-	f = open(sys.argv[1], 'rb')
-	if len(sys.argv) > 2:
-		f.seek(int(sys.argv[2], 0))
-	code = f.read()
-	disassemble(code)
-else:
-	print('usage: python3 disassemble.py [filename] [offset]')
-	exit(1)
+if __name__ == '__main__':
+	if len(sys.argv) > 1:
+		f = open(sys.argv[1], 'rb')
+		if len(sys.argv) > 2:
+			f.seek(int(sys.argv[2], 0))
+		code = f.read()
+		disassemble(code)
+	else:
+		print('usage: python3 disassemble.py [filename] [offset]')
+		exit(1)
