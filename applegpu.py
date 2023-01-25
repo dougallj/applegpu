@@ -1921,6 +1921,29 @@ class MemoryBaseDesc(OperandDesc):
 		fields[self.name + 't'] = 1 if isinstance(r, UReg64) else 0
 		fields[self.name] = r.n << 1
 
+class SampleMaskDesc(OperandDesc):
+	def __init__(self, name):
+		super().__init__(name)
+		self.add_merged_field(self.name, [
+			(42, 6, self.name),
+			(56, 2, self.name + 'x'),
+		])
+		self.add_field(22, 2, self.name + 't')
+
+	def decode(self, fields):
+		flags = fields[self.name + 't']
+		value = fields[self.name]
+
+		if flags == 0b0:
+			return Immediate(value)
+		elif flags == 0b1:
+			return Reg16(value)
+		else:
+			assert(0)
+
+	def encode_string(self, fields, opstr):
+		assert(0)
+
 class MemoryRegDesc(OperandDesc):
 	def __init__(self, name, off=10, offx=40, offt=49):
 		super().__init__(name)
@@ -4185,16 +4208,33 @@ MEMORY_FORMATS = {
 }
 
 MASK_DESCRIPTIONS = {
-	0b0001: 'single',
-	0b0011: 'pair',
-	0b0111: 'triple',
-	0b1111: 'quad',
+	a: ('x' if a & 1 else '') + ('y' if a & 2 else '') + ('z' if a & 4 else '') + ('w' if a & 8 else '') for a in range(16)
 }
 
 # TODO
 # uses sr60 implicitly?
 @register
 class LdstTileDesc(InstructionDesc):
+	documentation_html = '''
+	<p>
+	<code>ld_tile</code> and <code>st_tile</code> access shared memory in a
+	fragment shader with pixel-relative addressing. This emulates a
+	tilebuffer.
+
+	AGX fragment shaders always run at pixel rate (sample rate shading may
+	be lowered to pixel rate shading with a loop). That
+	means st_tile and ld_tile need to be able to load and store specific
+	samples. This is controlled by their sample mask source, which is a
+	bitmask of enabled samples. To store to a particular sample N, pass
+	(1 &lt;&lt; N). To store to a subset of samples { S1, ..., Sn },
+	pass Σ_i=1...n (1 &lt;&lt; N). To store to all samples, pass 0xFF as the
+	special "broadcast" value. Although MSAA 8x may not be used, this
+	value might be optimized specially.
+
+	The offset into shared memory is specified by O. This is in bytes and
+	does not take into account multisampling or tile size.
+	</p>'''
+
 	def __init__(self):
 		super().__init__('TODO.ld/st_tile', size=(8, 10))
 
@@ -4209,13 +4249,11 @@ class LdstTileDesc(InstructionDesc):
 		self.add_operand(ThreadgroupMemoryRegDesc('R'))
 
 		self.add_operand(EnumDesc('F', 24, 4, MEMORY_FORMATS))
-		self.add_operand(ImmediateDesc('rt', 32, 3))
 		self.add_operand(ImmediateDesc('u0', 35, 1))
 		self.add_operand(EnumDesc('mask', 36, 4, MASK_DESCRIPTIONS))
 
-		self.add_operand(ImmediateDesc('A', [(28, 4, 'A'), (40, 2, 'Ax')]))
-		self.add_operand(ImmediateDesc('B', [(42, 6, 'B'), (56, 2, 'Bx')]))
-		self.add_operand(ImmediateDesc('Br', 22, 2))
+		self.add_operand(ImmediateDesc('O', [(28, 7, 'A'), (40, 2, 'Ax')]))
+		self.add_operand(SampleMaskDesc('S'))
 		self.add_operand(ImmediateDesc('C', [(16, 6, 'C'), (58, 2, 'Cx')]))
 
 	def map_to_alias(self, mnem, operands):
