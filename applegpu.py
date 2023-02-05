@@ -4093,6 +4093,7 @@ for op1, op2, name in [
 	(1, 0b0000000000010000, 'quad_prefix_iadd'),
 	(0, 0b0000000000010100, 'quad_prefix_fadd'),
 	(0, 0b0001000000010100, 'quad_prefix_fmul'),
+	# Presumably there are quad_prefix_{and,or,xor,min,max} but I haven't seen them yet
 
 	(1, 0b0110000000000000, 'quad_min.u'),
 	(1, 0b0111000000000000, 'quad_max.u'),
@@ -4112,6 +4113,15 @@ for op1, op2, name in [
 	(1, 0b0000000000011000, 'simd_prefix_iadd'),
 	(0, 0b0000000000011100, 'simd_prefix_fadd'),
 	(0, 0b0001000000011100, 'simd_prefix_fmul'),
+
+	# These get used internally for optimizing uniform atomics
+	(0, 0b0000000000011000, 'simd_prefix_and'),
+	(0, 0b0001000000011000, 'simd_prefix_or'),
+	(0, 0b0010000000011000, 'simd_prefix_xor'),
+	(1, 0b0010000000011000, 'simd_prefix_min.s'),
+	(1, 0b0110000000011000, 'simd_prefix_min.u'),
+	(1, 0b0011000000011000, 'simd_prefix_max.s'),
+	(1, 0b0111000000011000, 'simd_prefix_max.u'),
 
 	(1, 0b0110000000001000, 'simd_min.u'),
 	(1, 0b0111000000001000, 'simd_max.u'),
