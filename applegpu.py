@@ -4829,6 +4829,8 @@ class StackAdjustInstructionDesc(InstructionDesc):
 		#self.add_operand(MemoryIndexDesc('idx'))
 
 class ThreadgroupLoadStoreInstructionDesc(InstructionDesc):
+	documentation_html = '<p>Access threadgroup (workgroup) local memory, otherwise known as shared memory. Like with global memory instructions, the offset is in terms of elements, as defined by the format, added to the base.</p>'
+
 	def __init__(self, name, bit):
 		super().__init__(name, size=(6, 8)) #(6, 8), length_bit_pos=47) # ?
 
