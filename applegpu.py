@@ -5421,6 +5421,74 @@ class StackAdjustTodoInstructionDesc(InstructionDesc):
 
 		self.add_operand(Reg32_4_4_Desc('r', 20, 32))
 
+class PBELodDesc(OperandDesc):
+	def __init__(self, name, off=24, offt=31, offx=60):
+		super().__init__(name)
+		self.add_merged_field(self.name, [
+			(off, 6, self.name),
+			(offx, 2, self.name + 'x'),
+		])
+		self.add_field(offt, 1, self.name + 't')
+
+	def decode(self, fields):
+		flags = fields[self.name + 't']
+		value = fields[self.name]
+		if flags == 0:
+			return Reg16(value)
+		else:
+			return Immediate(value)
+
+class PBESourceRegDesc(OperandDesc):
+	def __init__(self, name):
+		super().__init__(name)
+		self.add_merged_field(self.name, [
+			(9, 6, self.name),
+			# TODO: where is the extension?
+			#(60, 2, self.name + 'x'),
+		])
+		self.add_field(8, 1, self.name + 't')
+
+	def decode_impl(self, fields, allow64):
+		v = fields[self.name]
+
+		if fields[self.name + 't'] == 0:
+			return RegisterTuple(Reg16(v + i) for i in range(4))
+		else:
+			assert((v & 1) == 0)
+			return RegisterTuple(Reg32((v >> 1) + i) for i in range(4))
+
+	def decode(self, fields):
+		return self.decode_impl(fields, allow64=False)
+
+@register
+class ImageWrite(MaskedInstructionDesc):
+	def __init__(self):
+		super().__init__('image_write', size=(6, 8))
+		self.add_constant(0, 8, 0xF1)
+
+		self.add_operand(PBESourceRegDesc('R'))
+		self.add_operand(CoordsDesc('C', offx=58)) # TODO: figure out actual extend
+		self.add_operand(PBELodDesc('D'))
+		self.add_operand(TextureDesc('T', offx=56)) # TODO: figure out actual extend
+		self.add_operand(EnumDesc('n', [
+			(40, 3, 'n'),
+			#TODO: extend bit?
+			#(71, 1, 'nx')
+		], None, TEX_TYPES))
+
+		self.add_operand(EnumDesc('round', 53, 1, {
+			0: 'rte' # round to nearest [or writing integers]
+			1: 'rtz', # round to zero
+		}))
+
+		# All gaps below
+		self.add_operand(ImmediateDesc('u1', 23, 1))  # 1
+		self.add_operand(ImmediateDesc('u2', 30, 1))  # 0
+		self.add_operand(ImmediateDesc('u3', 43, 4))  # 9
+		self.add_operand(ImmediateDesc('u4', 47, 6))  # 0
+		self.add_operand(ImmediateDesc('u5', 54, 2))  # 0
+		self.add_operand(ImmediateDesc('u6', 62, 2))  # 0
+
 @register
 class TodoSrThingInstructionDesc(MaskedInstructionDesc):
 	def __init__(self):
