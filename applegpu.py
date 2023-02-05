@@ -5330,25 +5330,31 @@ class SampleMaskInstructionDesc(MaskedInstructionDesc):
 		self.add_operand(ImmediateDesc('sample_mask_is_immediate', 23, 1))
 
 @register
-class UnkF59InstructionDesc(MaskedInstructionDesc):
+class MemoryBarrierInstructionDesc(MaskedInstructionDesc):
 	def __init__(self):
-		super().__init__('TODO.unkF59', size=2)
+		super().__init__('memory_barrier', size=2)
 		self.add_constant(0, 8, 0xF5)
-		self.add_constant(12, 4, 0x9)
+
+		"""
+		device barrier:
+		1, 2, 9
+
+		texture barrier
+		2, 2, 10
+		3, 2, 10
+		[if threadgroup scope -- threadgroup barrier here]
+		2, 1, 10
+		3, 1, 10
+
+		threadgroup memory (or imageblock) barrier
+		[threadgroup barrier]
+		"""
+
+		# scope
+		# 1, 2, 9: device
 		self.add_operand(ImmediateDesc('a', 10, 2))
 		self.add_operand(ImmediateDesc('b', 8, 2))
-
-@register
-class UnkF503InstructionDesc(InstructionDesc):
-	def __init__(self):
-		super().__init__('TODO.unkF503', size=2)
-		self.add_constant(0, 16, 0x03F5)
-
-@register
-class UnkF533InstructionDesc(InstructionDesc):
-	def __init__(self):
-		super().__init__('TODO.unkF533', size=2)
-		self.add_constant(0, 16, 0x33F5)
+		self.add_operand(ImmediateDesc('c', 12, 4))
 
 def get_instruction_descriptor(n):
 	for o in instruction_descriptors:
