@@ -1992,15 +1992,23 @@ class MemoryRegDesc(OperandDesc):
 
 class ThreadgroupMemoryRegDesc(OperandDesc):
 	# TODO: exactly the same as MemoryRegDesc except for the offsets?
-	def __init__(self, name):
+	def __init__(self, name, offa=None):
 		super().__init__(name)
 		self.add_merged_field(self.name, [
 			(9, 6, self.name),
 			(60, 2, self.name + 'x'),
 		])
 		self.add_field(8, 1, self.name + 't')
+		if offa is not None:
+			self.add_field(offa, 1, self.name + 'a')
+			self.is_optional = True
+		else:
+			self.is_optional = False
 
 	def decode_impl(self, fields, allow64):
+		if self.is_optional and fields[self.name + 'a'] == 0:
+			return None
+
 		flags = fields[self.name + 't']
 
 		value = fields[self.name]
@@ -5152,6 +5160,106 @@ class ThreadgroupBarriernstructionDesc(InstructionDesc):
 	def __init__(self):
 		super().__init__('threadgroup_barrier', size=2)
 		self.add_constant(0, 8, 0x68)
+
+class AtomicSourceDesc(OperandDesc):
+	def __init__(self, name, off):
+		super().__init__(name)
+
+		self.add_merged_field(self.name, [
+			# TODO: Unsure if split with an extension
+			# TODO: Any flags?
+			(off, 8, self.name),
+		])
+
+	def decode(self, fields):
+		v = fields[self.name]
+		assert((v & 1) == 0)
+		return Reg32(v >> 1)
+
+class AtomicDestinationDesc(OperandDesc):
+	def __init__(self, name):
+		super().__init__(name)
+
+		self.add_merged_field(self.name, [
+			(10, 6, self.name),
+			# TODO: where is the extension field?
+		])
+
+		self.add_field(47, 1, self.name + 't')
+
+	def decode(self, fields):
+		v = fields[self.name]
+		vt = fields[self.name + 't']
+
+		if vt == 1:
+			assert((v & 1) == 0)
+			return Reg32(v >> 1)
+		else:
+			return None
+
+ATOMIC_OPCODES = {
+	0: 'add',
+	1: 'sub',
+	2: 'xchg',
+
+	# unusual, uses register pair for old/new value
+	3: 'cmpxchg',
+	4: 'umin',
+	5: 'imin',
+	6: 'umax',
+	7: 'imax',
+	8: 'and',
+	9: 'or',
+	10: 'xor',
+}
+
+@register
+class Atomic(InstructionDesc):
+	def __init__(self):
+		super().__init__('atomic', size=8)
+		self.add_constant(0, 6, 0x15)
+		self.add_operand(EnumDesc('op', 6, 4, ATOMIC_OPCODES))
+
+		self.add_operand(ImmediateDesc('g', 30, 1)) # wait group (scoreboarding)
+		self.add_operand(AtomicDestinationDesc("R"))
+
+		# Base + index, but no shift since you're not working on vectors
+		self.add_operand(MemoryBaseDesc('A'))
+		self.add_operand(MemoryIndexDesc('O'))
+		self.add_operand(EnumDesc('Ou', 25, 1, {
+			0: 'signed',
+			1: 'unsigned',
+		}))
+
+		self.add_operand(AtomicSourceDesc("S", off=48))
+
+		# All gaps follow below
+		self.add_operand(ImmediateDesc("u1", 26, 1)) # 1
+		self.add_operand(ImmediateDesc("u2", 28, 2)) # 0
+		self.add_operand(ImmediateDesc("u3", 31, 1)) # 1
+		self.add_operand(ImmediateDesc("u4", 40, 7)) # 0x50
+
+@register
+class ThreadgroupAtomic(InstructionDesc):
+	def __init__(self):
+		super().__init__('threadgroup_atomic', size=(6, 10))
+		self.add_constant(0, 6, 0x19)
+		self.add_operand(EnumDesc('op', 24, 4, ATOMIC_OPCODES))
+
+		self.add_operand(ThreadgroupMemoryRegDesc('R', offa=38))
+		self.add_operand(ThreadgroupMemoryBaseDesc('A'))
+		self.add_operand(ThreadgroupIndexDesc('O'))
+
+		self.add_operand(AtomicSourceDesc("S", off=64))
+
+		# There is no wait group, and no need to wait on the result before reading
+		# This is because threadgroup memory is fast and on-chip and so can be accessed in constant time
+
+		# All gaps follow below
+		self.add_operand(ImmediateDesc("u1", 6, 2)) #0
+		self.add_operand(ImmediateDesc("u3", 35, 3)) #2
+		self.add_operand(ImmediateDesc("u4", 40, 8)) #0x80, or 0x81 with cmpxchg
+		self.add_operand(ImmediateDesc("u5", 72, 8)) #0
 
 @register
 class UnknownAfterSampling1InstructionDesc(InstructionDesc):
