@@ -5161,13 +5161,14 @@ TEX_SIZES = {
 }
 
 class CoordsDesc(OperandDesc):
-	def __init__(self, name, off=16, offx=74, offt=22):
+	def __init__(self, name, off=16, offx=74, offt=22, offs=47):
 		super().__init__(name)
 		self.add_merged_field(self.name, [
 			(off, 6, self.name),
 			(offx, 2, self.name + 'x'),
 		])
 		self.add_field(offt, 1, self.name + 't')
+		self.add_field(offs, 1, self.name + 's')
 
 	def decode(self, fields):
 		flags = fields[self.name + 't']
@@ -5175,8 +5176,10 @@ class CoordsDesc(OperandDesc):
 
 		count, extra = TEX_SIZES[fields['n']]
 
-		# not really clear how the alignment requirement works
-		if extra:
+		if fields[self.name + 's'] != 0:
+			t = RegisterTuple(Reg16((value) + i) for i in range(count + extra))
+		elif extra:
+			# not really clear how the alignment requirement works
 			t = RegisterTuple(Reg16((value) + i) for i in range(count * 2 + 1))
 		else:
 			t = RegisterTuple(Reg32((value >> 1) + i) for i in range(count))
@@ -5249,7 +5252,7 @@ class TextureLoadSampleBaseInstructionDesc(InstructionDesc):
 		self.add_operand(ImmediateDesc('compare', 23, 1))
 		# unknowns
 		self.add_operand(BinaryDesc('q2', 30, 2))
-		self.add_operand(BinaryDesc('q3', 43, 5))
+		self.add_operand(BinaryDesc('q3', 43, 4))
 		self.add_operand(BinaryDesc('slot', 63, 1)) # slot to pass to wait
 
 		# Bottom bit set with compares?
@@ -5484,7 +5487,7 @@ class ImageWrite(MaskedInstructionDesc):
 		self.add_operand(ImmediateDesc('u1', 23, 1))  # 1
 		self.add_operand(ImmediateDesc('u2', 30, 1))  # 0
 		self.add_operand(ImmediateDesc('u3', 43, 4))  # 9
-		self.add_operand(ImmediateDesc('u4', 47, 6))  # 0
+		self.add_operand(ImmediateDesc('u4', 48, 5))  # 0
 		self.add_operand(ImmediateDesc('u5', 54, 2))  # 0
 
 @register
