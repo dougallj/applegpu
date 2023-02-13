@@ -2055,7 +2055,10 @@ class ThreadgroupMemoryRegDesc(OperandDesc):
 
 		value = fields[self.name]
 
-		count = bin(fields['mask']).count('1')
+		if self.is_optional:
+			count = 1
+		else:
+			count = bin(fields['mask']).count('1')
 
 		if flags == 0b0:
 			return RegisterTuple(Reg16(value + i) for i in range(count))
@@ -5380,7 +5383,7 @@ class AtomicDestinationDesc(OperandDesc):
 
 		self.add_merged_field(self.name, [
 			(10, 6, self.name),
-			# TODO: where is the extension field?
+			(40, 2, self.name + "x"),
 		])
 
 		self.add_field(47, 1, self.name + 't')
@@ -5435,7 +5438,7 @@ class Atomic(InstructionDesc):
 		self.add_operand(ImmediateDesc("u1", 26, 1)) # 1
 		self.add_operand(ImmediateDesc("u2", 28, 2)) # 0
 		self.add_operand(ImmediateDesc("u3", 31, 1)) # 1
-		self.add_operand(ImmediateDesc("u4", 40, 7)) # 0x50
+		self.add_operand(ImmediateDesc("u4", 42, 5)) # 0x14
 
 @register
 class ThreadgroupAtomic(InstructionDesc):
