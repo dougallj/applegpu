@@ -5443,8 +5443,7 @@ class PBESourceRegDesc(OperandDesc):
 		super().__init__(name)
 		self.add_merged_field(self.name, [
 			(9, 6, self.name),
-			# TODO: where is the extension?
-			#(60, 2, self.name + 'x'),
+			(56, 2, self.name + 'x'),
 		])
 		self.add_field(8, 1, self.name + 't')
 
@@ -5467,9 +5466,9 @@ class ImageWrite(MaskedInstructionDesc):
 		self.add_constant(0, 8, 0xF1)
 
 		self.add_operand(PBESourceRegDesc('R'))
-		self.add_operand(CoordsDesc('C', offx=58)) # TODO: figure out actual extend
+		self.add_operand(CoordsDesc('C', offx=58))
 		self.add_operand(PBELodDesc('D'))
-		self.add_operand(TextureDesc('T', offx=56)) # TODO: figure out actual extend
+		self.add_operand(TextureDesc('T', offx=62))
 		self.add_operand(EnumDesc('n', [
 			(40, 3, 'n'),
 			#TODO: extend bit?
@@ -5477,7 +5476,7 @@ class ImageWrite(MaskedInstructionDesc):
 		], None, TEX_TYPES))
 
 		self.add_operand(EnumDesc('round', 53, 1, {
-			0: 'rte' # round to nearest [or writing integers]
+			0: 'rte', # round to nearest [or writing integers]
 			1: 'rtz', # round to zero
 		}))
 
@@ -5487,7 +5486,6 @@ class ImageWrite(MaskedInstructionDesc):
 		self.add_operand(ImmediateDesc('u3', 43, 4))  # 9
 		self.add_operand(ImmediateDesc('u4', 47, 6))  # 0
 		self.add_operand(ImmediateDesc('u5', 54, 2))  # 0
-		self.add_operand(ImmediateDesc('u6', 62, 2))  # 0
 
 @register
 class TodoSrThingInstructionDesc(MaskedInstructionDesc):
