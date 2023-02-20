@@ -99,8 +99,8 @@ enum agx_selector {
 	AGX_SELECTOR_ALLOCATE_MEM = 0xA,
 	AGX_SELECTOR_CREATE_CMDBUF = 0xF,
 	AGX_SELECTOR_SUBMIT_COMMAND_BUFFERS = 0x1E,
-	AGX_SELECTOR_GET_VERSION = 0x23,
-	AGX_NUM_SELECTORS = 0x30
+	AGX_SELECTOR_GET_VERSION = 0x2A, //0x23,
+	AGX_NUM_SELECTORS = 0x33
 };
 
 static const char *selector_table[AGX_NUM_SELECTORS] = {
@@ -151,7 +151,10 @@ static const char *selector_table[AGX_NUM_SELECTORS] = {
 	"unk2C",
 	"unk2D",
 	"unk2E",
-	"unk2F"
+	"unk2F",
+	"unk30",
+	"unk31",
+	"unk32",
 };
 
 static inline const char *
@@ -240,15 +243,11 @@ wrap_IOConnectCallMethod(
 
 	case AGX_SELECTOR_SUBMIT_COMMAND_BUFFERS:
 		assert(output == NULL && outputStruct == NULL);
-		assert(inputStructCnt == 40);
-		assert(inputCnt == 1);
-
-		bool fs = false;
 
 		for (unsigned i = 0; i < MAP_COUNT; ++i) {
-			unsigned offset = fs ? 0x1380 : 0x13c0;
+			unsigned offset = 0x1100;
 
-			if (!mappings[i].gpu_va && !(mappings[i].type)) {
+			if (!mappings[i].gpu_va && !mappings[i].type) {
 				FILE *f = fopen("replace.bin", "rb");
 				if (f) {
 					size_t replaced = fread(mappings[i].map + offset, 1, 1024, f);
