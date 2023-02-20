@@ -4153,15 +4153,17 @@ for op1, op2, name in [
 
 
 for op, mnem in [
-	(0b10001, 'st_var'),
+	(0b01010001, 'no_var'),
+	(0b00010001, 'st_var'),
 	(0b10010001, 'st_var_final'),
 ]:
 	o = InstructionDesc(mnem, size=4)
 	o.add_constant(0, 10, op)
 	o.add_constant(22, 2, 2)
-	o.add_operand(ImmediateDesc('u', 31, 1)) # x: 26,2
+	# set with "no var" case
+	o.add_operand(ImmediateDesc('u', 31, 1))
 	o.add_operand(ExReg32Desc('r', 10, 24))
-	o.add_operand(ImmediateDesc('i', 16, 6)) # x: 26,2
+	o.add_operand(ImmediateDesc('i', [(16, 6, 'I'), (26, 2, 'Ix')]))
 	instruction_descriptors.append(o)
 
 
