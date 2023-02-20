@@ -1882,6 +1882,48 @@ class ThreadgroupIndexDesc(OperandDesc):
 
 		raise Exception('invalid ThreadgroupIndexDesc %r' % (opstr,))
 
+class AsyncMemoryRegDesc(OperandDesc):
+	def __init__(self, name):
+		super().__init__(name)
+		self.add_merged_field(self.name, [
+			(9, 6, self.name),
+		])
+		self.add_field(8, 1, self.name + 't')
+
+	def decode_impl(self, fields):
+		value = fields[self.name]
+		flags = fields[self.name + 't']
+		if flags:
+			return UReg64(value >> 1)
+		else:
+			return Reg64(value >> 1)
+
+	def decode(self, fields):
+		return self.decode_impl(fields)
+
+class AsyncMemoryBaseDesc(OperandDesc):
+	def __init__(self, name):
+		super().__init__(name)
+		self.add_merged_field(self.name, [
+			(16, 4, self.name + 'l'),
+			(36, 4, self.name + 'h'),
+		])
+		self.add_field(25, 1, self.name + 't')
+
+	def decode_impl(self, fields):
+		value = fields[self.name]
+		# Reg64(value) = address?
+		# Reg32(value+2) = length
+		reg_count = 5 if fields['F'] else 3
+		flags = fields[self.name + 't']
+		if flags:
+			return RegisterTuple((UReg32(value+i) for i in range(reg_count)))
+		else:
+			return RegisterTuple((Reg32(value+i) for i in range(reg_count)))
+
+	def decode(self, fields):
+		return self.decode_impl(fields)
+
 @document_operand
 class MemoryBaseDesc(OperandDesc):
 	def __init__(self, name):
@@ -4436,6 +4478,24 @@ class StoreToUniformInstructionDesc(InstructionDesc):
 		self.add_operand(MemoryIndexDesc('O'))
 		self.add_operand(MemoryShiftDesc('s'))
 
+
+class AsyncLoadStoreInstructionDesc(MaskedInstructionDesc):
+	def __init__(self, name, bit):
+		super().__init__(name, size=8)
+		self.add_constant(0, 7, 0b0100101 | (bit << 6))
+		self.add_operand(EnumDesc('F', 47, 1, {0:"copy_1d", 1:"copy_2d"}))
+		self.add_operand(AsyncMemoryRegDesc('R'))
+		self.add_operand(AsyncMemoryBaseDesc('A'))
+
+@register
+class AsyncStoreInstructionDesc(AsyncLoadStoreInstructionDesc):
+	def __init__(self):
+		super().__init__('async_store', 1)
+
+@register
+class AsyncLoadInstructionDesc(AsyncLoadStoreInstructionDesc):
+	def __init__(self):
+		super().__init__('async_load', 0)
 
 class DeviceLoadStoreInstructionDesc(MaskedInstructionDesc):
 	def __init__(self, name, bit):
