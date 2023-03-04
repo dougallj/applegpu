@@ -3969,8 +3969,10 @@ class SimdShuffleInstructionDesc(BaseSimdShuffleInstructionDesc):
 
 		if b < 32:
 			result = quad_values[index >> 2]
+		else:
+			result = A[index]
 
-			D[thread] = result
+		D[thread] = result
 	'''
 
 	def exec(self, instr, corestate):
@@ -4002,7 +4004,30 @@ class SimdShuffleInstructionDesc(BaseSimdShuffleInstructionDesc):
 				index = self.operands['B'].evaluate_thread(fields, corestate, thread)
 				if index < SIMD_WIDTH:
 					result = quad_values[index >> 2]
-					self.operands['D'].set_thread(fields, corestate, thread, result)
+				else:
+					result = self.operands['A'].evaluate_thread(fields, corestate, thread)
+				self.operands['D'].set_thread(fields, corestate, thread, result)
+
+class OperandAccessor:
+	def __init__(self, operand, fields, corestate, write_only=False, read_only=False):
+		self.operand = operand
+		self.fields = fields
+		self.corestate = corestate
+		self.write_only = write_only
+		self.read_only = read_only
+		if read_only:
+			self.values = [self.operand.evaluate_thread(self.fields, self.corestate, i) for i in range(32)]
+
+	def __getitem__(self, thread):
+		assert not self.write_only
+		if self.read_only:
+			return self.values[thread]
+		else:
+			return self.operand.evaluate_thread(self.fields, self.corestate, thread)
+
+	def __setitem__(self, thread, value):
+		assert not self.read_only
+		return self.operand.set_thread(self.fields, self.corestate, thread, value)
 
 @register
 class SimdShuffleDownInstructionDesc(BaseSimdShuffleInstructionDesc):
@@ -4014,32 +4039,120 @@ class SimdShuffleDownInstructionDesc(BaseSimdShuffleInstructionDesc):
 		self.add_constant(26, 2, 0b01)
 
 	# TODO: how does this work with different values in different threads?
-
-	# confusingly - looks like, in groups of four threads, the
-	# shift_amount from all active threads is ORed together.
-	# values within the quad can then be shifted by that amount,
-	# but values coming from outside the thread depend on the
-	# amounts specified in other groups, and the value in that
-	# cell itself.
-	#
-	# e.g. [1, 0, 0, 0, 0...] -> select [1, 2, 3, 0, 4, n...]
-	#      [0, 0, 0, 1, 0...] -> select [1, 2, 3, 7, 4, n...]
-	#      [0, 0, 2, 1, 0...] -> select [3, 0, 6, 7, 4, n...]
-	#
-	# work in progress
-
-	def exec_thread(self, instr, corestate, thread):
+	def exec(self, instr, corestate):
 		fields = dict(self.decode_fields(instr))
+		A = OperandAccessor(self.operands['A'], fields, corestate, read_only=True)
+		B = OperandAccessor(self.operands['B'], fields, corestate, read_only=True)
+		D = OperandAccessor(self.operands['D'], fields, corestate, write_only=True)
 
-		# "undefined" if not all the same
-		shift_amount = self.operands['B'].evaluate_thread(fields, corestate, thread)
+		quad_values = []
+		for quad_start in range(0, SIMD_WIDTH, 4):
+			quad_shift = 0
+			for thread in range(quad_start, quad_start + 4):
+				quad_shift |= B[thread] & 3
+			quad_values.append([A[quad_start + ((i + quad_shift) & 3)] for i in range(4)])
 
-		if thread < SIMD_WIDTH - shift_amount:
-			n = thread + shift_amount
-		else:
-			n = thread
-		result = self.operands['A'].evaluate_thread(fields, corestate, n)
-		self.operands['D'].set_thread(fields, corestate, thread, result)
+		for thread in range(SIMD_WIDTH):
+			if corestate.exec[thread]:
+				index = B[thread]
+				if index + thread < SIMD_WIDTH:
+					result = quad_values[(index + thread) >> 2][thread & 3]
+				else:
+					result = A[thread]
+				D[thread] = result
+
+
+@register
+class SimdShuffleUpInstructionDesc(BaseSimdShuffleInstructionDesc):
+	def __init__(self):
+		super().__init__('simd_shuffle_up')
+
+		self.add_constant(47, 1, 0b0)
+		self.add_constant(38, 2, 0b10)
+		self.add_constant(26, 2, 0b01)
+
+	def exec(self, instr, corestate):
+		fields = dict(self.decode_fields(instr))
+		A = OperandAccessor(self.operands['A'], fields, corestate, read_only=True)
+		B = OperandAccessor(self.operands['B'], fields, corestate, read_only=True)
+		D = OperandAccessor(self.operands['D'], fields, corestate, write_only=True)
+
+		quad_values = []
+		for quad_start in range(0, SIMD_WIDTH, 4):
+			quad_shift = 0
+			for thread in range(quad_start, quad_start + 4):
+				quad_shift |= B[thread] & 3
+			quad_values.append([A[quad_start + ((i - quad_shift) & 3)] for i in range(4)])
+
+		for thread in range(SIMD_WIDTH):
+			if corestate.exec[thread]:
+				index = B[thread]
+				if thread - index >= 0:
+					result = quad_values[(thread - index) >> 2][thread & 3]
+				else:
+					result = A[thread]
+				D[thread] = result
+
+@register
+class SimdShuffleRotateUpInstructionDesc(BaseSimdShuffleInstructionDesc):
+	def __init__(self):
+		super().__init__('simd_shuffle_rotate_up')
+
+		self.add_constant(47, 1, 0b1)
+		self.add_constant(38, 2, 0b10)
+		self.add_constant(26, 2, 0b01)
+
+	def exec(self, instr, corestate):
+		fields = dict(self.decode_fields(instr))
+		A = OperandAccessor(self.operands['A'], fields, corestate, read_only=True)
+		B = OperandAccessor(self.operands['B'], fields, corestate, read_only=True)
+		D = OperandAccessor(self.operands['D'], fields, corestate, write_only=True)
+
+		quad_values = []
+		for quad_start in range(0, SIMD_WIDTH, 4):
+			quad_shift = 0
+			for thread in range(quad_start, quad_start + 4):
+				quad_shift |= B[thread] & 3
+			quad_values.append([A[quad_start + ((i - quad_shift) & 3)] for i in range(4)])
+
+		for thread in range(SIMD_WIDTH):
+			if corestate.exec[thread]:
+				index = B[thread]
+				result = quad_values[((thread - index) & 31) >> 2][thread & 3]
+				D[thread] = result
+
+
+@register
+class SimdShuffleXorInstructionDesc(BaseSimdShuffleInstructionDesc):
+	def __init__(self):
+		super().__init__('simd_shuffle_xor')
+
+		self.add_constant(47, 1, 0b0)
+		self.add_constant(38, 2, 0b01)
+		self.add_constant(26, 2, 0b01)
+
+	def exec(self, instr, corestate):
+		fields = dict(self.decode_fields(instr))
+		A = OperandAccessor(self.operands['A'], fields, corestate, read_only=True)
+		B = OperandAccessor(self.operands['B'], fields, corestate, read_only=True)
+		D = OperandAccessor(self.operands['D'], fields, corestate, write_only=True)
+
+		quad_values = []
+		for quad_start in range(0, SIMD_WIDTH, 4):
+			quad_xor = 0
+			for thread in range(quad_start, quad_start + 4):
+				quad_xor |= B[thread] & 3
+			quad_values.append([A[quad_start + ((i ^ quad_xor) & 3)] for i in range(4)])
+
+		for thread in range(SIMD_WIDTH):
+			if corestate.exec[thread]:
+				xor = B[thread]
+
+				if thread ^ xor < SIMD_WIDTH:
+					result = quad_values[((thread ^ xor) & 31) >> 2][thread & 3]
+				else:
+					result = A[thread]
+				D[thread] = result
 
 
 @register
@@ -4088,10 +4201,13 @@ for op1, op2, op3, name in [
 	(0b1, 0b10, 0b00, 'quad_shuffle_rotate_up'),
 	(0b0, 0b01, 0b00, 'quad_shuffle_xor'),
 	#(0b0, 0b00, 0b01, 'simd_shuffle'),
-	(0b0, 0b01, 0b01, 'simd_shuffle_xor'),
-	(0b0, 0b10, 0b01, 'simd_shuffle_up'),
+	#(0b0, 0b01, 0b01, 'simd_shuffle_xor'),
+	#(0b0, 0b10, 0b01, 'simd_shuffle_up'),
 	#(0b0, 0b11, 0b01, 'simd_shuffle_down'),
-	(0b1, 0b10, 0b01, 'simd_shuffle_rotate_up'),
+	#(0b1, 0b10, 0b01, 'simd_shuffle_rotate_up'),
+
+	# TODO: setting op1 to 1 seems to work for others too?
+	#       figure out what it's doing.
 	(None, None, None, 'simd_shuf_op'),
 ]:
 
