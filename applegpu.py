@@ -4630,8 +4630,8 @@ class DeviceLoadStoreInstructionDesc(MaskedInstructionDesc):
 		self.add_operand(MemoryBaseDesc('A'))
 		self.add_operand(MemoryIndexDesc('O'))
 		self.add_operand(EnumDesc('Ou', 25, 1, {
-			0: 'signed',
-			1: 'unsigned',
+			0: 'offset_signed',
+			1: 'offset_unsigned',
 		}))
 		self.add_operand(MemoryShiftDesc('s'))
 
