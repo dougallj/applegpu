@@ -3137,9 +3137,8 @@ class FMAdd16InstructionDesc(FSaturatableInstructionDesc):
 
 class FBinaryInstructionDesc(FSaturatableInstructionDesc):
 	def __init__(self, name, opcode):
-		super().__init__(name, size=6)
+		super().__init__(name, size=(4,6))
 		self.add_constant(0, 6, opcode)
-		self.add_constant(15, 1, 1)
 
 		self.add_operand(FloatDstDesc('D', 44))
 
@@ -3148,9 +3147,8 @@ class FBinaryInstructionDesc(FSaturatableInstructionDesc):
 
 class F16BinaryInstructionDesc(FSaturatableInstructionDesc):
 	def __init__(self, name, opcode):
-		super().__init__(name, size=6)
+		super().__init__(name, size=(4,6))
 		self.add_constant(0, 6, opcode)
-		self.add_constant(15, 1, 1)
 
 		# TODO: what if dest isn't 16-bit?
 		self.add_operand(FloatDst16Desc('D', 44))
