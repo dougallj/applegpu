@@ -4499,51 +4499,73 @@ class CFPerspectiveDesc(OperandDesc):
 
 	def decode(self, fields):
 		#flags = fields[self.name + 't']
-		
-		if not fields['P']:
-			return ''
-
 		value = fields[self.name]
 
 		#if flags == 0b0:
 		return CF(value)
 
-@register
-class IterDesc(InstructionDesc):
+class IterSampleID(OperandDesc):
+	def __init__(self, name, off):
+		super().__init__(name)
+		self.add_field(off, 8, self.name)
+
+	def decode(self, fields):
+		value = fields[self.name]
+
+		if fields['interpolation'] & 1:
+			if fields['interpolation'] & 2:
+				return Reg16(value)
+			else:
+				return Immediate(value)
+		else:
+			assert(value == 0)
+			return ''
+
+class IterateDesc(InstructionDesc):
 	documentation_html = '''
 	<p>The last four bytes are omitted if L=0.</p>
 	<p>If forwarding is enabled, the result of the varying must be consumed directly as coordinates by a subsequent texture_sample instruction.</p>
 	'''
 
-	def __init__(self):
-		super().__init__('TODO.iter', size=(4, 8))
+	def __init__(self, name, projected):
+		super().__init__(name, size=(4, 8))
+		self.projected = projected
+
 		self.add_constant(0, 6, 0x21)
+		self.add_constant(6, 1, 1 if self.projected else 0)
 		self.add_constant(7, 1, 0)
 		
 		self.add_operand(VarRegisterDesc('D'))
-
-		self.add_operand(EnumDesc('P', 6, 1, {
-			0: 'no_perspective',
-			1: 'perspective',
-		}))
-
 		self.add_operand(CFDesc('I', 16, 58))
-		self.add_operand(CFPerspectiveDesc('J', 24, 60))
 
-		self.add_operand(ImmediateDesc('q0', 32, 1))
+		if self.projected:
+			self.add_operand(CFPerspectiveDesc('J', 24, 60))
+
+		self.add_operand(IterSampleID('S', 32))
 		self.add_operand(EnumDesc('forwarding', 46, 1, {
 			0: 'forward',
-			1: 'no_forward'
+			# no forward
+			1: ''
 		}))
-		self.add_operand(EnumDesc('sample', 48, 1, {
-			0: 'pixel',
-			1: 'sample'
-		}))
-		self.add_operand(EnumDesc('centroid', 49, 1, {
-			0: 'no_centroid',
-			1: 'centroid'
+		self.add_operand(EnumDesc('interpolation', 48, 2, {
+			0: 'center',
+            # Immediate
+			1: 'sample',
+            2: 'centroid',
+            # Register
+            3: 'sample',
 		}))
 		self.add_operand(BinaryDesc('kill', 52, 1)) # Kill helper invocations 
+
+@register
+class IterDesc(IterateDesc):
+	def __init__(self):
+		super().__init__('iter', False)
+
+@register
+class IterProjDesc(IterateDesc):
+	def __init__(self):
+		super().__init__('iterproj', True)
 
 @register
 class LoadCFDesc(InstructionDesc):
