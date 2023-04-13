@@ -5375,7 +5375,10 @@ class AtomicSourceDesc(OperandDesc):
 	def decode(self, fields):
 		v = fields[self.name]
 		assert((v & 1) == 0)
-		return Reg32(v >> 1)
+		if fields['op'] == 3:
+			return Reg64(v >> 1)
+		else:
+			return Reg32(v >> 1)
 
 class AtomicDestinationDesc(OperandDesc):
 	def __init__(self, name):
@@ -5414,6 +5417,7 @@ ATOMIC_OPCODES = {
 	10: 'xor',
 }
 
+
 @register
 class Atomic(InstructionDesc):
 	def __init__(self):
@@ -5438,10 +5442,12 @@ class Atomic(InstructionDesc):
 		self.add_operand(ImmediateDesc("u1", 26, 1)) # 1
 		self.add_operand(ImmediateDesc("u2", 28, 2)) # 0
 		self.add_operand(ImmediateDesc("u3", 31, 1)) # 1
-		self.add_operand(ImmediateDesc("u4", 42, 5)) # 0x14
+		self.add_operand(ImmediateDesc("u4", 42, 3)) # 4
+		self.add_operand(ImmediateDesc("u5", 45, 2)) # 2 (or, with op=cmpxchg, 1=umin64, 3=umax64)
 
 @register
 class ThreadgroupAtomic(InstructionDesc):
+	documentation_html = '<p>The last four bytes are omitted if L=0.</p>'
 	def __init__(self):
 		super().__init__('threadgroup_atomic', size=(6, 10))
 		self.add_constant(0, 6, 0x19)
