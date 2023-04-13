@@ -2034,15 +2034,23 @@ class MemoryRegDesc(OperandDesc):
 
 class ThreadgroupMemoryRegDesc(OperandDesc):
 	# TODO: exactly the same as MemoryRegDesc except for the offsets?
-	def __init__(self, name):
+	def __init__(self, name, offa=None):
 		super().__init__(name)
 		self.add_merged_field(self.name, [
 			(9, 6, self.name),
 			(60, 2, self.name + 'x'),
 		])
 		self.add_field(8, 1, self.name + 't')
+		if offa is not None:
+			self.add_field(offa, 1, self.name + 'a')
+			self.is_optional = True
+		else:
+			self.is_optional = False
 
 	def decode_impl(self, fields, allow64):
+		if self.is_optional and fields[self.name + 'a'] == 0:
+			return None
+
 		flags = fields[self.name + 't']
 
 		value = fields[self.name]
@@ -4249,6 +4257,7 @@ for op1, op2, name in [
 	(1, 0b0000000000010000, 'quad_prefix_iadd'),
 	(0, 0b0000000000010100, 'quad_prefix_fadd'),
 	(0, 0b0001000000010100, 'quad_prefix_fmul'),
+	# Presumably there are quad_prefix_{and,or,xor,min,max} but I haven't seen them yet
 
 	(1, 0b0110000000000000, 'quad_min.u'),
 	(1, 0b0111000000000000, 'quad_max.u'),
@@ -4268,6 +4277,15 @@ for op1, op2, name in [
 	(1, 0b0000000000011000, 'simd_prefix_iadd'),
 	(0, 0b0000000000011100, 'simd_prefix_fadd'),
 	(0, 0b0001000000011100, 'simd_prefix_fmul'),
+
+	# These get used internally for optimizing uniform atomics
+	(0, 0b0000000000011000, 'simd_prefix_and'),
+	(0, 0b0001000000011000, 'simd_prefix_or'),
+	(0, 0b0010000000011000, 'simd_prefix_xor'),
+	(1, 0b0010000000011000, 'simd_prefix_min.s'),
+	(1, 0b0110000000011000, 'simd_prefix_min.u'),
+	(1, 0b0011000000011000, 'simd_prefix_max.s'),
+	(1, 0b0111000000011000, 'simd_prefix_max.u'),
 
 	(1, 0b0110000000001000, 'simd_min.u'),
 	(1, 0b0111000000001000, 'simd_max.u'),
@@ -5027,6 +5045,8 @@ class StackAdjustInstructionDesc(InstructionDesc):
 		#self.add_operand(MemoryIndexDesc('idx'))
 
 class ThreadgroupLoadStoreInstructionDesc(InstructionDesc):
+	documentation_html = '<p>Access threadgroup (workgroup) local memory, otherwise known as shared memory. Like with global memory instructions, the offset is in terms of elements, as defined by the format, added to the base.</p>'
+
 	def __init__(self, name, bit):
 		super().__init__(name, size=(6, 8)) #(6, 8), length_bit_pos=47) # ?
 
@@ -5339,6 +5359,106 @@ class ThreadgroupBarriernstructionDesc(InstructionDesc):
 		super().__init__('threadgroup_barrier', size=2)
 		self.add_constant(0, 8, 0x68)
 
+class AtomicSourceDesc(OperandDesc):
+	def __init__(self, name, off):
+		super().__init__(name)
+
+		self.add_merged_field(self.name, [
+			# TODO: Unsure if split with an extension
+			# TODO: Any flags?
+			(off, 8, self.name),
+		])
+
+	def decode(self, fields):
+		v = fields[self.name]
+		assert((v & 1) == 0)
+		return Reg32(v >> 1)
+
+class AtomicDestinationDesc(OperandDesc):
+	def __init__(self, name):
+		super().__init__(name)
+
+		self.add_merged_field(self.name, [
+			(10, 6, self.name),
+			# TODO: where is the extension field?
+		])
+
+		self.add_field(47, 1, self.name + 't')
+
+	def decode(self, fields):
+		v = fields[self.name]
+		vt = fields[self.name + 't']
+
+		if vt == 1:
+			assert((v & 1) == 0)
+			return Reg32(v >> 1)
+		else:
+			return None
+
+ATOMIC_OPCODES = {
+	0: 'add',
+	1: 'sub',
+	2: 'xchg',
+
+	# unusual, uses register pair for old/new value
+	3: 'cmpxchg',
+	4: 'umin',
+	5: 'imin',
+	6: 'umax',
+	7: 'imax',
+	8: 'and',
+	9: 'or',
+	10: 'xor',
+}
+
+@register
+class Atomic(InstructionDesc):
+	def __init__(self):
+		super().__init__('atomic', size=8)
+		self.add_constant(0, 6, 0x15)
+		self.add_operand(EnumDesc('op', 6, 4, ATOMIC_OPCODES))
+
+		self.add_operand(ImmediateDesc('g', 30, 1)) # wait group (scoreboarding)
+		self.add_operand(AtomicDestinationDesc("R"))
+
+		# Base + index, but no shift since you're not working on vectors
+		self.add_operand(MemoryBaseDesc('A'))
+		self.add_operand(MemoryIndexDesc('O'))
+		self.add_operand(EnumDesc('Ou', 25, 1, {
+			0: 'signed',
+			1: 'unsigned',
+		}))
+
+		self.add_operand(AtomicSourceDesc("S", off=48))
+
+		# All gaps follow below
+		self.add_operand(ImmediateDesc("u1", 26, 1)) # 1
+		self.add_operand(ImmediateDesc("u2", 28, 2)) # 0
+		self.add_operand(ImmediateDesc("u3", 31, 1)) # 1
+		self.add_operand(ImmediateDesc("u4", 40, 7)) # 0x50
+
+@register
+class ThreadgroupAtomic(InstructionDesc):
+	def __init__(self):
+		super().__init__('threadgroup_atomic', size=(6, 10))
+		self.add_constant(0, 6, 0x19)
+		self.add_operand(EnumDesc('op', 24, 4, ATOMIC_OPCODES))
+
+		self.add_operand(ThreadgroupMemoryRegDesc('R', offa=38))
+		self.add_operand(ThreadgroupMemoryBaseDesc('A'))
+		self.add_operand(ThreadgroupIndexDesc('O'))
+
+		self.add_operand(AtomicSourceDesc("S", off=64))
+
+		# There is no wait group, and no need to wait on the result before reading
+		# This is because threadgroup memory is fast and on-chip and so can be accessed in constant time
+
+		# All gaps follow below
+		self.add_operand(ImmediateDesc("u1", 6, 2)) #0
+		self.add_operand(ImmediateDesc("u3", 35, 3)) #2
+		self.add_operand(ImmediateDesc("u4", 40, 8)) #0x80, or 0x81 with cmpxchg
+		self.add_operand(ImmediateDesc("u5", 72, 8)) #0
+
 @register
 class UnknownAfterSampling1InstructionDesc(InstructionDesc):
 	def __init__(self):
@@ -5526,25 +5646,31 @@ class SampleMaskInstructionDesc(MaskedInstructionDesc):
 		self.add_operand(ImmediateDesc('sample_mask_is_immediate', 23, 1))
 
 @register
-class UnkF59InstructionDesc(MaskedInstructionDesc):
+class MemoryBarrierInstructionDesc(MaskedInstructionDesc):
 	def __init__(self):
-		super().__init__('TODO.unkF59', size=2)
+		super().__init__('memory_barrier', size=2)
 		self.add_constant(0, 8, 0xF5)
-		self.add_constant(12, 4, 0x9)
+
+		"""
+		device barrier:
+		1, 2, 9
+
+		texture barrier
+		2, 2, 10
+		3, 2, 10
+		[if threadgroup scope -- threadgroup barrier here]
+		2, 1, 10
+		3, 1, 10
+
+		threadgroup memory (or imageblock) barrier
+		[threadgroup barrier]
+		"""
+
+		# scope
+		# 1, 2, 9: device
 		self.add_operand(ImmediateDesc('a', 10, 2))
 		self.add_operand(ImmediateDesc('b', 8, 2))
-
-@register
-class UnkF503InstructionDesc(InstructionDesc):
-	def __init__(self):
-		super().__init__('TODO.unkF503', size=2)
-		self.add_constant(0, 16, 0x03F5)
-
-@register
-class UnkF533InstructionDesc(InstructionDesc):
-	def __init__(self):
-		super().__init__('TODO.unkF533', size=2)
-		self.add_constant(0, 16, 0x33F5)
+		self.add_operand(ImmediateDesc('c', 12, 4))
 
 def get_instruction_descriptor(n):
 	for o in instruction_descriptors:
