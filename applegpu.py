@@ -2055,7 +2055,10 @@ class ThreadgroupMemoryRegDesc(OperandDesc):
 
 		value = fields[self.name]
 
-		count = bin(fields['mask']).count('1')
+		if self.is_optional:
+			count = 1
+		else:
+			count = bin(fields['mask']).count('1')
 
 		if flags == 0b0:
 			return RegisterTuple(Reg16(value + i) for i in range(count))
@@ -5372,7 +5375,10 @@ class AtomicSourceDesc(OperandDesc):
 	def decode(self, fields):
 		v = fields[self.name]
 		assert((v & 1) == 0)
-		return Reg32(v >> 1)
+		if fields['op'] == 3:
+			return Reg64(v >> 1)
+		else:
+			return Reg32(v >> 1)
 
 class AtomicDestinationDesc(OperandDesc):
 	def __init__(self, name):
@@ -5380,7 +5386,7 @@ class AtomicDestinationDesc(OperandDesc):
 
 		self.add_merged_field(self.name, [
 			(10, 6, self.name),
-			# TODO: where is the extension field?
+			(40, 2, self.name + "x"),
 		])
 
 		self.add_field(47, 1, self.name + 't')
@@ -5411,6 +5417,7 @@ ATOMIC_OPCODES = {
 	10: 'xor',
 }
 
+
 @register
 class Atomic(InstructionDesc):
 	def __init__(self):
@@ -5435,10 +5442,12 @@ class Atomic(InstructionDesc):
 		self.add_operand(ImmediateDesc("u1", 26, 1)) # 1
 		self.add_operand(ImmediateDesc("u2", 28, 2)) # 0
 		self.add_operand(ImmediateDesc("u3", 31, 1)) # 1
-		self.add_operand(ImmediateDesc("u4", 40, 7)) # 0x50
+		self.add_operand(ImmediateDesc("u4", 42, 3)) # 4
+		self.add_operand(ImmediateDesc("u5", 45, 2)) # 2 (or, with op=cmpxchg, 1=umin64, 3=umax64)
 
 @register
 class ThreadgroupAtomic(InstructionDesc):
+	documentation_html = '<p>The last four bytes are omitted if L=0.</p>'
 	def __init__(self):
 		super().__init__('threadgroup_atomic', size=(6, 10))
 		self.add_constant(0, 6, 0x19)
