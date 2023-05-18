@@ -5471,11 +5471,11 @@ class ImageWrite(MaskedInstructionDesc):
 		self.add_operand(PBESourceRegDesc('R'))
 		self.add_operand(CoordsDesc('C', offx=58))
 		self.add_operand(PBELodDesc('D'))
+		self.add_operand(SampleURegDesc('U', 48, 5))
 		self.add_operand(TextureDesc('T', offx=62))
 		self.add_operand(EnumDesc('n', [
 			(40, 3, 'n'),
-			#TODO: extend bit?
-			#(71, 1, 'nx')
+			(55, 1, 'nx')
 		], None, TEX_TYPES))
 
 		self.add_operand(EnumDesc('round', 53, 1, {
@@ -5487,8 +5487,7 @@ class ImageWrite(MaskedInstructionDesc):
 		self.add_operand(ImmediateDesc('u1', 23, 1))  # 1
 		self.add_operand(ImmediateDesc('u2', 30, 1))  # 0
 		self.add_operand(ImmediateDesc('u3', 43, 4))  # 9
-		self.add_operand(ImmediateDesc('u4', 48, 5))  # 0
-		self.add_operand(ImmediateDesc('u5', 54, 2))  # 0
+		self.add_operand(ImmediateDesc('u5', 54, 1))  # 0
 
 @register
 class TodoSrThingInstructionDesc(MaskedInstructionDesc):
