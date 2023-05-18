@@ -4344,12 +4344,17 @@ for op, mnem in [
 	instruction_descriptors.append(o)
 
 
-o = InstructionDesc('writeout', size=4)
+o = InstructionDesc('wait_pix', size=4)
 o.add_constant(0, 8, 0b01001000)
-o.add_operand(ImmediateDesc('i', 8, 10)) # x: 26,2
-o.add_operand(ImmediateDesc('j', 22, 2)) # x: 26,2
+o.add_operand(ImmediateDesc('i', 8, 10))
+o.add_operand(ImmediateDesc('j', 22, 2))
 instruction_descriptors.append(o)
 
+o = InstructionDesc('signal_pix', size=4)
+o.add_constant(0, 8, 0b01011000)
+o.add_operand(ImmediateDesc('i', 8, 10))
+o.add_operand(ImmediateDesc('j', 22, 2))
+instruction_descriptors.append(o)
 
 # wait for a load
 @register
