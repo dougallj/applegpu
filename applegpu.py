@@ -39,6 +39,11 @@ SR_NAMES = {
 	53: 'simdgroup_index_in_threadgroup',
 	56: 'active_thread_index_in_quadgroup',
 	58: 'active_thread_index_in_simdgroup',
+	# sample coverage mask in fragment shaders?
+	# MSAA lowering uses this
+	60: 'internal_coverage_mask',
+	# [sample_mask] input in Metal
+	124: 'input_coverage_mask',
         # In fragment shaders. Invert for front facing
 	62: 'backfacing',
 	63: 'is_active_thread', # compare to zero for simd/quad_is_helper_thread
