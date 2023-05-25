@@ -5052,7 +5052,7 @@ class SampleURegDesc(OperandDesc):
 
 	def decode(self, fields):
 		v = fields[self.name]
-		if fields['Tt'] & 1:
+		if fields['Tt'] & 2:
 			return UReg64(v * 2)
 		else:
 			return None
@@ -5079,15 +5079,19 @@ class TextureDesc(OperandDesc):
 		value = fields[self.name]
 
 		if flags == 0b0:
+			# Immediate texture state
 			return TextureState(value)
 		elif flags == 0b01:
+			# Indirect texture state
 			return Reg16(value)
 		elif flags == 0b10:
+			# Bindless, unknown. Maybe a 16-bit register offset.
 			if value == 0:
-				return Immediate(0)
+				return Immediate(0) # How can this be right?
 			else:
 				return Reg16(value)
 		elif flags == 0b11:
+			# Bindless 64-bit uniform + 32-bit offset
 			return Reg32(value >> 1)
 
 	def encode_string(self, fields, opstr):
