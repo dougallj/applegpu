@@ -2836,6 +2836,17 @@ class IUnaryInstructionDesc(MaskedInstructionDesc):
 
 		self.add_constant(28, 10, 0)
 
+class IBinaryInstructionDesc(MaskedInstructionDesc):
+	def __init__(self, name):
+		super().__init__(name, size=6)
+		self.add_constant(0, 7, 0b0111110)
+		self.add_constant(15, 1, 0)
+
+		self.add_operand(ALUDstDesc('D', 44))
+		self.add_operand(ALUSrcDesc('A', 16, 42))
+		self.add_operand(ALUSrcDesc('B', 28, 40))
+
+
 
 @register
 class BitopInstructionDesc(MaskedInstructionDesc):
@@ -3009,6 +3020,35 @@ class PopCountInstructionDesc(IUnaryInstructionDesc):
 				result += 1
 
 		self.operands['D'].set_thread(fields, corestate, thread, result)
+
+
+
+@register
+class InterleaveInstructionDesc(IBinaryInstructionDesc):
+	documentation_name = 'INTerLeave bits (Morton encode)'
+
+	pseudocode = '''
+	for each active thread:
+		a = A[thread]
+		b = B[thread]
+
+		result = 0
+
+		i = 0
+		for i in range(16):
+			if a & (1 << i):
+				result |= (1 << (2 * i))
+
+			if b & (1 << i):
+				result |= (1 << ((2 * i) + 1))
+
+		D[thread] = result
+	'''
+
+	def __init__(self):
+		super().__init__('intl')
+		self.add_constant(38, 2, 0b00)
+		self.add_constant(26, 2, 0b00)
 
 @register
 class FindFirstSetInstructionDesc(IUnaryInstructionDesc):
