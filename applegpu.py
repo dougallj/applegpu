@@ -2265,6 +2265,7 @@ class MovImm32InstructionDesc(MaskedInstructionDesc):
 		self.add_constant(8, 1, 1) # TODO: this is within dst
 
 		self.add_operand(ImmediateDesc('imm32', 16, 32))
+		self.add_operand(BinaryDesc('kill', 62, 1)) # Kill helper invocations
 
 	def fields_for_mnem(self, mnem, operand_strings):
 		# TODO: should have "ALUDst32OnlyDesc" / "ALUDst16OnlyDesc" that fall through to other mnemonics
