@@ -39,6 +39,11 @@ SR_NAMES = {
 	53: 'simdgroup_index_in_threadgroup',
 	56: 'active_thread_index_in_quadgroup',
 	58: 'active_thread_index_in_simdgroup',
+	# sample coverage mask in fragment shaders?
+	# MSAA lowering uses this
+	60: 'internal_coverage_mask',
+	# [sample_mask] input in Metal
+	124: 'input_coverage_mask',
         # In fragment shaders. Invert for front facing
 	62: 'backfacing',
 	63: 'is_active_thread', # compare to zero for simd/quad_is_helper_thread
@@ -1964,24 +1969,68 @@ class MemoryBaseDesc(OperandDesc):
 		fields[self.name] = r.n << 1
 
 class SampleMaskDesc(OperandDesc):
-	def __init__(self, name):
+	def __init__(self, name, off=42, offx=56, offt=22, flags_type=2):
 		super().__init__(name)
 		self.add_merged_field(self.name, [
-			(42, 6, self.name),
-			(56, 2, self.name + 'x'),
+			(off, 6, self.name),
+			(offx, 2, self.name + 'x'),
 		])
-		self.add_field(22, 2, self.name + 't')
+		self.add_field(offt, flags_type, self.name + 't')
+		assert(flags_type in [1, 2])
+		self.flags_type = flags_type
 
 	def decode(self, fields):
 		flags = fields[self.name + 't']
 		value = fields[self.name]
 
-		if flags == 0b0:
+		if flags >= 2:
+			assert(0)
+
+		if (flags == 0b0) == (self.flags_type == 2):
 			return Immediate(value)
-		elif flags == 0b1:
+		else:
+			return Reg16(value)
+
+	def encode_string(self, fields, opstr):
+		assert(0)
+
+class DiscardMaskDesc(OperandDesc):
+	def __init__(self, name):
+		super().__init__(name)
+		self.add_merged_field(self.name, [
+			(16, 6, self.name),
+			(26, 2, self.name + 'x')
+		])
+		self.add_field(23, 1, self.name + 't')
+
+	def decode(self, fields):
+		value = fields[self.name]
+		flags = fields[self.name + 't']
+		if flags == 0:
 			return Reg16(value)
 		else:
-			assert(0)
+			return Immediate(value)
+
+	def encode_string(self, fields, opstr):
+		assert(0)
+
+
+class ZSDesc(OperandDesc):
+	def __init__(self, name):
+		super().__init__(name)
+		self.add_merged_field(self.name, [
+			(16, 6, self.name),
+			(26, 2, self.name + 'x')
+		])
+		self.add_field(29, 1, 'z')
+		self.add_field(30, 1, 's')
+
+	def decode(self, fields):
+		value = fields[self.name]
+		count = (2 if fields['z'] else 0) + (1 if fields['s'] else 0)
+		assert(count > 0 and "otherwise the instr is pointless")
+		# Unclear how alignment requirements work
+		return RegisterTuple(Reg16(value + i) for i in range(count))
 
 	def encode_string(self, fields, opstr):
 		assert(0)
@@ -5775,9 +5824,21 @@ class SampleMaskInstructionDesc(MaskedInstructionDesc):
 	def __init__(self):
 		super().__init__('sample_mask', size=4)
 		self.add_constant(0, 8, 0xC1)
-		self.add_operand(ImmediateDesc('S', [(16, 6, 'S'), (26, 2, 'Sx')])) # Immediate sample mask
+		self.add_operand(SampleMaskDesc('S', offt=8, off=9, offx=24, flags_type=1))
+		self.add_operand(DiscardMaskDesc('M'))
 		self.add_constant(15, 1, 0)
-		self.add_operand(ImmediateDesc('sample_mask_is_immediate', 23, 1))
+
+@register
+class ZSEmitInstructionDesc(MaskedInstructionDesc):
+	def __init__(self):
+		super().__init__('zs_emit', size=4)
+		self.add_constant(0, 8, 0x41)
+		self.add_constant(15, 1, 0)
+		self.add_operand(SampleMaskDesc('S', offt=8, off=9, offx=24, flags_type=1))
+		self.add_operand(ZSDesc('T'))
+		self.add_operand(ImmediateDesc('u0', 22, 2))
+
+
 
 @register
 class MemoryBarrierInstructionDesc(MaskedInstructionDesc):
