@@ -5137,7 +5137,7 @@ class SampleURegDesc(OperandDesc):
 
 	def decode(self, fields):
 		v = fields[self.name]
-		if fields['Tt'] & 1:
+		if fields['Tt'] & 2:
 			return UReg64(v * 2)
 		else:
 			return None
@@ -5164,15 +5164,19 @@ class TextureDesc(OperandDesc):
 		value = fields[self.name]
 
 		if flags == 0b0:
+			# Immediate texture state
 			return TextureState(value)
 		elif flags == 0b01:
+			# Indirect texture state
 			return Reg16(value)
 		elif flags == 0b10:
+			# Bindless, unknown. Maybe a 16-bit register offset.
 			if value == 0:
-				return Immediate(0)
+				return Immediate(0) # How can this be right?
 			else:
 				return Reg16(value)
 		elif flags == 0b11:
+			# Bindless 64-bit uniform + 32-bit offset
 			return Reg32(value >> 1)
 
 	def encode_string(self, fields, opstr):
@@ -5246,13 +5250,14 @@ TEX_SIZES = {
 }
 
 class CoordsDesc(OperandDesc):
-	def __init__(self, name, off=16, offx=74, offt=22):
+	def __init__(self, name, off=16, offx=74, offt=22, offs=47):
 		super().__init__(name)
 		self.add_merged_field(self.name, [
 			(off, 6, self.name),
 			(offx, 2, self.name + 'x'),
 		])
 		self.add_field(offt, 1, self.name + 't')
+		self.add_field(offs, 1, self.name + 's')
 
 	def decode(self, fields):
 		flags = fields[self.name + 't']
@@ -5260,8 +5265,10 @@ class CoordsDesc(OperandDesc):
 
 		count, extra = TEX_SIZES[fields['n']]
 
-		# not really clear how the alignment requirement works
-		if extra:
+		if fields[self.name + 's'] != 0:
+			t = RegisterTuple(Reg16((value) + i) for i in range(count + extra))
+		elif extra:
+			# not really clear how the alignment requirement works
 			t = RegisterTuple(Reg16((value) + i) for i in range(count * 2 + 1))
 		else:
 			t = RegisterTuple(Reg32((value >> 1) + i) for i in range(count))
@@ -5334,7 +5341,7 @@ class TextureLoadSampleBaseInstructionDesc(InstructionDesc):
 		self.add_operand(ImmediateDesc('compare', 23, 1))
 		# unknowns
 		self.add_operand(BinaryDesc('q2', 30, 2))
-		self.add_operand(BinaryDesc('q3', 43, 5))
+		self.add_operand(BinaryDesc('q3', 43, 4))
 		self.add_operand(BinaryDesc('slot', 63, 1)) # slot to pass to wait
 
 		# Bottom bit set with compares?
@@ -5611,6 +5618,71 @@ class StackAdjustTodoInstructionDesc(InstructionDesc):
 		self.add_operand(ImmediateDesc('i4', 50, 6))
 
 		self.add_operand(Reg32_4_4_Desc('r', 20, 32))
+
+class PBELodDesc(OperandDesc):
+	def __init__(self, name, off=24, offt=31, offx=60):
+		super().__init__(name)
+		self.add_merged_field(self.name, [
+			(off, 6, self.name),
+			(offx, 2, self.name + 'x'),
+		])
+		self.add_field(offt, 1, self.name + 't')
+
+	def decode(self, fields):
+		flags = fields[self.name + 't']
+		value = fields[self.name]
+		if flags == 0:
+			return Reg16(value)
+		else:
+			return Immediate(value)
+
+class PBESourceRegDesc(OperandDesc):
+	def __init__(self, name):
+		super().__init__(name)
+		self.add_merged_field(self.name, [
+			(9, 6, self.name),
+			(56, 2, self.name + 'x'),
+		])
+		self.add_field(8, 1, self.name + 't')
+
+	def decode_impl(self, fields, allow64):
+		v = fields[self.name]
+
+		if fields[self.name + 't'] == 0:
+			return RegisterTuple(Reg16(v + i) for i in range(4))
+		else:
+			assert((v & 1) == 0)
+			return RegisterTuple(Reg32((v >> 1) + i) for i in range(4))
+
+	def decode(self, fields):
+		return self.decode_impl(fields, allow64=False)
+
+@register
+class ImageWrite(MaskedInstructionDesc):
+	def __init__(self):
+		super().__init__('image_write', size=(6, 8))
+		self.add_constant(0, 8, 0xF1)
+
+		self.add_operand(PBESourceRegDesc('R'))
+		self.add_operand(CoordsDesc('C', offx=58))
+		self.add_operand(PBELodDesc('D'))
+		self.add_operand(SampleURegDesc('U', 48, 5))
+		self.add_operand(TextureDesc('T', offx=62))
+		self.add_operand(EnumDesc('n', [
+			(40, 3, 'n'),
+			(55, 1, 'nx')
+		], None, TEX_TYPES))
+
+		self.add_operand(EnumDesc('round', 53, 1, {
+			0: 'rte', # round to nearest [or writing integers]
+			1: 'rtz', # round to zero
+		}))
+
+		# All gaps below
+		self.add_operand(ImmediateDesc('u1', 23, 1))  # 1
+		self.add_operand(ImmediateDesc('u2', 30, 1))  # 0
+		self.add_operand(ImmediateDesc('u3', 43, 4))  # 9
+		self.add_operand(ImmediateDesc('u5', 54, 1))  # 0
 
 @register
 class TodoSrThingInstructionDesc(MaskedInstructionDesc):
