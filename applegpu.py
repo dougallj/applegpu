@@ -5344,8 +5344,15 @@ class TextureLoadSampleBaseInstructionDesc(InstructionDesc):
 		self.add_operand(BinaryDesc('q3', 43, 4))
 		self.add_operand(BinaryDesc('slot', 63, 1)) # slot to pass to wait
 
-		# Bottom bit set with compares?
-		self.add_operand(BinaryDesc('q6', 86, 5))
+		self.add_operand(EnumDesc('q6', 86, 5, {
+			0b00000: 'none',
+			0b00001: 'compare',
+			0b00010: 'gather_r',
+			0b00011: 'gather_depth',
+			0b00110: 'gather_g',
+			0b01010: 'gather_b',
+			0b01110: 'gather_a',
+		}))
 
 		self.add_operand(EnumDesc('mask', 48, 4, SAMPLE_MASK_DESCRIPTIONS))
 
