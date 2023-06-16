@@ -5397,7 +5397,12 @@ class TextureLoadSampleBaseInstructionDesc(InstructionDesc):
 
 		self.add_operand(ImmediateDesc('compare', 23, 1))
 		# unknowns
-		self.add_operand(BinaryDesc('q2', 30, 2))
+		self.add_operand(EnumDesc('mode', 30, 2, {
+			0b00: '', # sample
+
+			# Returns vec2 of LOD. x is clamped, y is unclamped.
+			0b10: 'query_lod',
+		}))
 		self.add_operand(BinaryDesc('q3', 43, 4))
 		self.add_operand(BinaryDesc('slot', 63, 1)) # slot to pass to wait
 
