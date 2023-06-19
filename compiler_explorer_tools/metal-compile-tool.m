@@ -56,6 +56,7 @@ static const struct option longOpts[] = {
 	{"gpu",           required_argument, NULL, 'g'},
 	{"no-fast-math",  no_argument,       NULL, OPTION_NO_FAST_MATH},
 	{"target-format", required_argument, NULL, OPTION_TARGET_FORMAT},
+	{"function",      required_argument, NULL, 'f'},
 	{NULL, 0, NULL, 0}
 };
 
@@ -66,9 +67,10 @@ int main(int argc, char* argv[]) {
 	BOOL fastMath = YES;
 	const char* output_name = NULL;
 	const char* gpu = NULL;
+	const char* target_function_name = NULL;
 	MTLPixelFormat targetFmt = MTLPixelFormatRGBA8Unorm;
 	int c;
-	while ((c = getopt_long(argc, argv, "o:g:", longOpts, NULL)) > 0) {
+	while ((c = getopt_long(argc, argv, "o:g:f:", longOpts, NULL)) > 0) {
 		switch (c) {
 			case 'o':
 				output_name = optarg;
@@ -81,6 +83,9 @@ int main(int argc, char* argv[]) {
 				break;
 			case OPTION_TARGET_FORMAT:
 				targetFmt = getFormat(optarg);
+				break;
+			case 'f':
+				target_function_name = optarg;
 				break;
 			case '?':
 				if (!optopt) {
@@ -141,6 +146,10 @@ int main(int argc, char* argv[]) {
 	id<MTLFunction> vs, fs, cs;
 	for (NSString* name in [lib functionNames]) {
 		id<MTLFunction> fn = [lib newFunctionWithName:name];
+		if (target_function_name && strcmp(target_function_name, [name UTF8String]) != 0) {
+			continue;
+		}
+
 		if (!fn) {
 			fprintf(stderr, "Failed to make function %s\n", [name UTF8String]);
 			return EXIT_FAILURE;
