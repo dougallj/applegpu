@@ -2139,6 +2139,21 @@ class ThreadgroupMemoryRegDesc(OperandDesc):
 		fields[self.name] = value
 		fields[self.name + 't'] = flags
 
+class TileToMemoryRegDesc(OperandDesc):
+	# TODO: exactly the same as MemoryRegDesc except for the offsets?
+	def __init__(self, name):
+		super().__init__(name)
+		self.add_merged_field(self.name, [
+			(9, 6, self.name),
+			(56, 2, self.name + 'x'),
+		])
+
+	def decode_impl(self, fields, allow64):
+		return Reg16(fields[self.name])
+
+	def decode(self, fields):
+		return self.decode_impl(fields, allow64=False)
+
 #@document_operand
 class ThreadgroupMemoryBaseDesc(OperandDesc):
 	def __init__(self, name):
@@ -5650,17 +5665,51 @@ class Unk20InstructionDesc(InstructionDesc):
 		self.add_operand(BranchOffsetDesc('off', 16, 8))
 		self.add_constant(24, 8, 0)
 
+class PBELodDesc(OperandDesc):
+	def __init__(self, name, off=24, offt=31, offx=60):
+		super().__init__(name)
+		self.add_merged_field(self.name, [
+			(off, 6, self.name),
+			(offx, 2, self.name + 'x'),
+		])
+		self.add_field(offt, 1, self.name + 't')
+
+	def decode(self, fields):
+		flags = fields[self.name + 't']
+		value = fields[self.name]
+		if flags == 0:
+			return Reg16(value)
+		else:
+			return Immediate(value)
+
 @register
-class UnkB1InstructionDesc(InstructionDesc):
+class ImageWriteBlockInstructionDesc(InstructionDesc):
 	documentation_html = '<p>The last four bytes are omitted if L=0.</p>'
 	def __init__(self):
-		super().__init__('TODO.unkB1', size=(6, 10))
+		super().__init__('image_write_block', size=(6, 10))
 		self.add_constant(0, 8, 0xB1)
-		self.add_constant(16, 14, 0)
-		self.add_constant(38, 3, 0)
+		self.add_operand(TileToMemoryRegDesc('R')) #actually w
+		self.add_operand(CoordsDesc('C', offx=58))
+		self.add_operand(PBELodDesc('D'))
+		self.add_operand(TextureDesc('T', offx=62)) #
+		self.add_operand(EnumDesc('n', [
+			(40, 3, 'n'),
+			(55, 1, 'nx')
+		], None, TEX_TYPES))
+
 		self.add_constant(48, 5, 0)
-		self.add_constant(58, 4, 0)
-		self.add_constant(68, 12, 0)
+
+		self.add_operand(EnumDesc('round', 53, 1, {
+			0: 'rte', # round to nearest [or writing integers]
+			1: 'rtz', # round to zero
+		}))
+
+		self.add_operand(EnumDesc('F', [(8, 1, 'F'), (64, 3, 'Fx')], None, MEMORY_FORMATS))
+		self.add_constant(68, 10, 0)
+
+		self.add_operand(ImmediateDesc('q0', 23, 1))
+		self.add_operand(ImmediateDesc('q1', 43, 4))
+		self.add_operand(ImmediateDesc('q2', 67, 1))
 
 class Reg32_4_4_Desc(OperandDesc):
 	def __init__(self, name, start, start2):
@@ -5690,23 +5739,6 @@ class StackAdjustTodoInstructionDesc(InstructionDesc):
 		self.add_operand(ImmediateDesc('i4', 50, 6))
 
 		self.add_operand(Reg32_4_4_Desc('r', 20, 32))
-
-class PBELodDesc(OperandDesc):
-	def __init__(self, name, off=24, offt=31, offx=60):
-		super().__init__(name)
-		self.add_merged_field(self.name, [
-			(off, 6, self.name),
-			(offx, 2, self.name + 'x'),
-		])
-		self.add_field(offt, 1, self.name + 't')
-
-	def decode(self, fields):
-		flags = fields[self.name + 't']
-		value = fields[self.name]
-		if flags == 0:
-			return Reg16(value)
-		else:
-			return Immediate(value)
 
 class PBESourceRegDesc(OperandDesc):
 	def __init__(self, name):
