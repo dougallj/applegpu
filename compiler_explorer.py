@@ -30,6 +30,9 @@ if __name__ == '__main__':
 			magic = struct.unpack("<I", file.read(4))[0]
 			if magic in (0xcbfebabe, 0xbebafecb, 0xfeedfacf, 0xcffaedfe):
 				shaders = read_shader_archive(sys.argv[1])
+				if not shaders and subprocess.check_output([archiveExtractor, '--list-shaders', sys.argv[1]]):
+					file.seek(0)
+					shaders = [('contained', file.read())]
 	if not shaders:
 		with tempfile.TemporaryDirectory() as tmpdirname:
 			filename = os.path.join(tmpdirname, 'shader.bin')
