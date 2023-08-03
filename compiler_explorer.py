@@ -36,13 +36,27 @@ if __name__ == '__main__':
 			subprocess.check_output([compileTool, '-o', filename] + sys.argv[1:])
 			shaders = read_shader_archive(filename)
 	for shaderType, shader in shaders:
-		prolog = subprocess.check_output([archiveExtractor, '--extract-prolog-shader', '-', '-'], input=shader)
-		if prolog:
-			print(f"{shaderType} shader prolog:")
-			disassemble.disassemble(prolog)
-			print("")
-		main = subprocess.check_output([archiveExtractor, '--extract-main-shader', '-', '-'], input=shader)
-		if main:
-			print(f"{shaderType} shader:")
-			disassemble.disassemble(main)
-			print("\n")
+		list = subprocess.check_output([archiveExtractor, '--list-shaders', '-'], input=shader).decode("utf-8").split("\n")
+		sort_order = {"_agc.main.constant_program": 1, "_agc.main": 2}
+		list.sort(key=lambda x: sort_order.get(x, 0))
+		found = False
+		for name in list:
+			if not name.strip():
+				continue
+			data = subprocess.check_output([archiveExtractor, '--extract-named-shader', name, '--output', '-', '-'], input=shader)
+			# Trim excess traps (compiler uses them for padding)
+			while len(data) > 2 and data[-2] == 8 and data[-1] == 0:
+				data = data[:-2]
+			if not any(byte != 0 for byte in data):
+				continue
+			found = True
+			friendly_names = {
+				"_agc.main.constant_program": "shader prolog",
+				"_agc.main": "shader",
+			}
+			friendly_name = friendly_names.get(name, name)
+			print(f"{shaderType} {friendly_name}:")
+			disassemble.disassemble(data)
+			print()
+		if found:
+			print()

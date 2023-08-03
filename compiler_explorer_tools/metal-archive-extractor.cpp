@@ -168,18 +168,31 @@ static void* isSymtab(void* ctx, load_command* cmd) {
 	}
 }
 
-static Buffer findSymbol(Buffer buffer, const char* segment, const char* sectionName, const char* symbol) {
-	section_64* section = findSection(buffer, segment, sectionName);
-	if (!section) { return {}; }
-	symtab_command* cmd = reinterpret_cast<symtab_command*>(findCommand(buffer, nullptr, isSymtab));
-	char* strings = buffer.offsetPtr<char>(cmd->stroff);
-	if (!buffer.inBounds(strings + cmd->strsize)) {
+static bool findSymtab(Buffer buffer, const char* segment, const char* sectionName,
+                       section_64** section, symtab_command** cmd, char** strings, nlist_64** symbols)
+{
+	*section = findSection(buffer, segment, sectionName);
+	if (!*section) { return false; }
+	*cmd = reinterpret_cast<symtab_command*>(findCommand(buffer, nullptr, isSymtab));
+	*strings = buffer.offsetPtr<char>((*cmd)->stroff);
+	if (!buffer.inBounds(*strings + (*cmd)->strsize)) {
 		fprintf(stderr, "String table is out of bounds!\n");
-		return {};
+		return false;
 	}
-	nlist_64* symbols = buffer.offsetPtr<nlist_64>(cmd->symoff);
-	if (!buffer.inBounds(symbols + cmd->nsyms)) {
+	*symbols = buffer.offsetPtr<nlist_64>((*cmd)->symoff);
+	if (!buffer.inBounds(*symbols + (*cmd)->nsyms)) {
 		fprintf(stderr, "Symbol table is out of bounds!\n");
+		return false;
+	}
+	return true;
+}
+
+static Buffer findSymbol(Buffer buffer, const char* segment, const char* sectionName, const char* symbol) {
+	section_64* section;
+	symtab_command* cmd;
+	char* strings;
+	nlist_64* symbols;
+	if (!findSymtab(buffer, segment, sectionName, &section, &cmd, &strings, &symbols)) {
 		return {};
 	}
 	uint64_t begin = 0;
@@ -211,6 +224,29 @@ static Buffer findSymbol(Buffer buffer, const char* segment, const char* section
 	return { buffer.offsetPtr(begin - section->addr + section->offset), end - begin };
 }
 
+static std::vector<const char*> findAllSymbols(Buffer buffer, const char* segment, const char* sectionName) {
+	section_64* section;
+	symtab_command* cmd;
+	char* strings;
+	nlist_64* symbols;
+	if (!findSymtab(buffer, segment, sectionName, &section, &cmd, &strings, &symbols)) {
+		return {};
+	}
+	std::vector<const char*> out;
+	for (uint32_t i = 0; i < cmd->nsyms; i++) {
+		uint32_t stroff = symbols[i].n_un.n_strx;
+		uint32_t limit = cmd->strsize - stroff;
+		if (stroff >= cmd->strsize || strnlen(strings + stroff, limit) == limit) {
+			fprintf(stderr, "Symbol %d's name is out of bounds\n", i);
+			continue;
+		}
+		if (symbols[i].n_value - section->addr < section->size) {
+			out.push_back(strings + stroff);
+		}
+	}
+	return out;
+}
+
 static FILE* openOrDie(const char* filename, const char* mode) {
 	FILE* output = fopen(filename, mode);
 	if (!output) {
@@ -222,7 +258,7 @@ static FILE* openOrDie(const char* filename, const char* mode) {
 
 static void printUsageAndExit(const char* argv0) {
 	fprintf(stderr, "Usage: %s [--extract-vertex vertex.bin] [--extract-fragment fragment.bin] [--extract-compute compute.bin] binary_archive.bin\n"
-	                "Usage: %s [--extract-prolog-shader prolog.bin] [--extract-main-shader main.bin] agx_shader_archive.bin\n",
+	                "Usage: %s [--list-shaders] [--extract-prolog-shader prolog.bin] [--extract-main-shader main.bin] [--extract-named-shader shader_name --output named.bin] agx_shader_archive.bin\n",
 	        argv0, argv0);
 	exit(EXIT_FAILURE);
 }
@@ -249,12 +285,20 @@ static void dumpSymbol(Buffer buffer, const char* filename, const char* segmentN
 	if (file != stdout) { fclose(file); }
 }
 
+enum Options {
+	OPTION_NAMED_SHADER = 128,
+	OPTION_OUTPUT,
+};
+
 static constexpr option longOpts[] = {
 	{"extract-vertex",         required_argument, nullptr, 'v'},
 	{"extract-fragment",       required_argument, nullptr, 'f'},
 	{"extract-compute",        required_argument, nullptr, 'c'},
 	{"extract-prolog-shader",  required_argument, nullptr, 'p'},
 	{"extract-main-shader",    required_argument, nullptr, 'm'},
+	{"list-shaders",           no_argument,       nullptr, 'l'},
+	{"extract-named-shader",   required_argument, nullptr, OPTION_NAMED_SHADER},
+	{"output",                 required_argument, nullptr, OPTION_OUTPUT},
 	{nullptr, 0, nullptr, 0}
 };
 
@@ -267,8 +311,11 @@ int main(int argc, char* argv[]) {
 	const char* compute_out = nullptr;
 	const char* prolog_out = nullptr;
 	const char* main_out = nullptr;
+	const char* extract_name = nullptr;
+	const char* other_out = nullptr;
+	bool cmd_list = false;
 	int c;
-	while ((c = getopt_long(argc, argv, "v:f:c:p:m:", longOpts, nullptr)) > 0) {
+	while ((c = getopt_long(argc, argv, "v:f:c:p:m:l", longOpts, nullptr)) > 0) {
 		switch (c) {
 			case 'v':
 				vertex_out = optarg;
@@ -285,6 +332,15 @@ int main(int argc, char* argv[]) {
 			case 'm':
 				main_out = optarg;
 				break;
+			case 'l':
+				cmd_list = true;
+				break;
+			case OPTION_NAMED_SHADER:
+				extract_name = optarg;
+				break;
+			case OPTION_OUTPUT:
+				other_out = optarg;
+				break;
 			case '?':
 				if (!optopt) {
 				} else if (strchr("vfcpm", optopt)) {
@@ -296,9 +352,13 @@ int main(int argc, char* argv[]) {
 		}
 	}
 	bool extract_section = vertex_out || fragment_out || compute_out;
-	bool extract_subsection = prolog_out || main_out;
+	bool extract_subsection = prolog_out || main_out || extract_name;
 	if (extract_section && extract_subsection) {
 		fprintf(stderr, "Can't combine archive extract options and agx extract options!\n");
+		printUsageAndExit(argv[0]);
+	}
+	if (extract_name && !other_out) {
+		fprintf(stderr, "--extract-named-shader requires an output declared with --output!\n");
 		printUsageAndExit(argv[0]);
 	}
 	if (optind >= argc) {
@@ -319,13 +379,17 @@ int main(int argc, char* argv[]) {
 
 	Buffer gpu = findGPU(buffer);
 	if (!gpu) { return EXIT_FAILURE; }
-	if (extract_section) {
+	if (cmd_list) {
+		for (const char* symbol : findAllSymbols(gpu, "__TEXT", "__text"))
+			puts(symbol);
+	} else if (extract_section) {
 		if (vertex_out)   { dumpSection(gpu, vertex_out,   "__TEXT", "__vertex"  ); }
 		if (fragment_out) { dumpSection(gpu, fragment_out, "__TEXT", "__fragment"); }
 		if (compute_out)  { dumpSection(gpu, compute_out,  "__TEXT", "__compute" ); }
 	} else if (extract_subsection) {
-		if (prolog_out) { dumpSymbol(gpu, prolog_out, "__TEXT", "__text", "_agc.main.constant_program"); }
-		if (main_out)   { dumpSymbol(gpu, main_out,   "__TEXT", "__text", "_agc.main"); }
+		if (prolog_out)   { dumpSymbol(gpu, prolog_out, "__TEXT", "__text", "_agc.main.constant_program"); }
+		if (main_out)     { dumpSymbol(gpu, main_out,   "__TEXT", "__text", "_agc.main"); }
+		if (extract_name) { dumpSymbol(gpu, other_out,  "__TEXT", "__text", extract_name); }
 	} else {
 		printf("Binary for %s\n", getMachineTypeName(gpu));
 		if (findSection(gpu, "__TEXT", "__vertex")) {
