@@ -4687,6 +4687,12 @@ class IterateDesc(InstructionDesc):
             3: 'sample',
 		}))
 		self.add_operand(BinaryDesc('kill', 52, 1)) # Kill helper invocations 
+		self.add_operand(ImmediateDesc('unk0', 22, 2))
+		self.add_operand(ImmediateDesc('unk1', 40, 6)) # 0
+		self.add_operand(ImmediateDesc('unk2', 47, 1)) # 0
+		self.add_operand(ImmediateDesc('unk3', 50, 2)) # 0
+		self.add_operand(ImmediateDesc('unk4', 53, 3)) # 0
+		self.add_operand(ImmediateDesc('unk5', 62, 2)) # 0
 
 @register
 class IterDesc(IterateDesc):
