@@ -4673,11 +4673,21 @@ class IterateDesc(InstructionDesc):
 			self.add_operand(CFPerspectiveDesc('J', 24, 60))
 
 		self.add_operand(IterSampleID('S', 32))
-		self.add_operand(EnumDesc('forwarding', 46, 1, {
-			0: 'forward',
+		self.add_operand(EnumDesc('forwarding', 22, 1, {
 			# no forward
-			1: ''
+			0: '',
+			1: 'forward',
 		}))
+		self.add_operand(EnumDesc('elide', 46, 1, {
+			# Default behaviour (safe default)
+			0: '',
+
+			# Elide barriers with other instructions. In particular:
+			# - back-to-back iter/ldcf instructions must be free of WaW hazards
+			# - must not be set when `forward` is set
+			1: 'elide',
+		}))
+
 		self.add_operand(EnumDesc('interpolation', 48, 2, {
 			0: 'center',
             # Immediate
@@ -4687,6 +4697,12 @@ class IterateDesc(InstructionDesc):
             3: 'sample',
 		}))
 		self.add_operand(BinaryDesc('kill', 52, 1)) # Kill helper invocations 
+		self.add_operand(ImmediateDesc('unk0', 23, 1)) # 0
+		self.add_operand(ImmediateDesc('unk1', 40, 6)) # 0
+		self.add_operand(ImmediateDesc('unk2', 47, 1)) # 0
+		self.add_operand(ImmediateDesc('unk3', 50, 2)) # 0
+		self.add_operand(ImmediateDesc('unk4', 53, 3)) # 0
+		self.add_operand(ImmediateDesc('unk5', 62, 2)) # 0
 
 @register
 class IterDesc(IterateDesc):
