@@ -5674,16 +5674,16 @@ class Unk0CInstructionDesc(InstructionDesc):
 		self.add_constant(0, 16, 0x0C)
 
 @register
-class Unk28InstructionDesc(InstructionDesc):
+class DoorbellInstructionDesc(InstructionDesc):
 	def __init__(self):
-		super().__init__('TODO.unk28', size=2)
+		super().__init__('doorbell', size=2)
 		self.add_constant(0, 8, 0x28)
 		self.add_operand(ImmediateDesc('imm', 8, 8))
 
 @register
-class Unk20InstructionDesc(InstructionDesc):
+class JumpNoDoorbellInstructionDesc(InstructionDesc):
 	def __init__(self):
-		super().__init__('TODO.br20', size=4)
+		super().__init__('jmp_if_skipping_doorbell', size=4)
 		self.add_constant(0, 16, 0x20)
 		self.add_operand(BranchOffsetDesc('off', 16, 8))
 		self.add_constant(24, 8, 0)
