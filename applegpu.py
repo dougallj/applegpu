@@ -5834,29 +5834,51 @@ class TodoPopExecInstructionDesc(MaskedInstructionDesc):
 		self.add_operand(ImmediateDesc('n', 11, 2))
 
 @register
-class Unk75InstructionDesc(MaskedInstructionDesc):
+class MapInstructionDesc(MaskedInstructionDesc):
 	def __init__(self):
-		super().__init__('TODO.unk75', size=8) # maybe: size=(6, 8), length_bit_pos=47)
+		super().__init__('map', size=8) # maybe: size=(6, 8), length_bit_pos=47)
 		self.add_constant(0, 8, 0x75)
 		self.add_constant(10, 1, 0)
 		self.add_constant(47, 1, 1)
 
-		self.add_constant(16, 4, 1)
+		self.add_operand(EnumDesc('op', 16, 4, {
+			0: 'unmap',
+			1: 'map'
+		}))
+
+		# Unclear exactly what.
+		self.add_operand(EnumDesc('target', 36, 1, {
+			0: 'target0',
+			1: 'target1'
+		}))
+
 		self.add_constant(24, 2, 1)
 		self.add_constant(27, 3, 0)
 		self.add_constant(31, 1, 0)
 
+		# Register input
 		self.add_operand(ExReg32Desc('R', 11, 40))
+
+		# Immediate value 0, 1, 2, 3
 		self.add_operand(StackAdjustmentDesc('v'))
 
-		self.add_operand(BinaryDesc('q1', 8, 2))
-		#self.add_operand(BinaryDesc('q2', 30, 2))
-		#self.add_operand(BinaryDesc('q3', 43, 5))
-		#self.add_operand(BinaryDesc('kill', 69, 3))
-		#self.add_operand(BinaryDesc('q5', 63, 1))
-		#self.add_operand(BinaryDesc('q6', 86, 5))
+		self.add_operand(BinaryDesc('q1', 8, 2)) #0
+		self.add_operand(BinaryDesc('q2', 30, 1)) #0
+		self.add_operand(BinaryDesc('q3', 37, 3)) #0
+		self.add_operand(BinaryDesc('q4', 42, 5)) #0b10000
+		self.add_operand(BinaryDesc('q5', 48, 8)) #0b00010000
 
 		# TODO: 75 0A 10 05 10 80 12 00
+
+	def map_to_alias(self, mnem, operands):
+		op = operands[0]
+		if op == 'unmap':
+			return 'unmap', operands[1:]
+		elif op == 'map':
+			return 'map', operands[1:]
+		else:
+			return 'TODO.map', operands
+
 
 @register
 class Unk75AltInstructionDesc(MaskedInstructionDesc):
