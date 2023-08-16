@@ -5866,6 +5866,11 @@ class Unk75AltInstructionDesc(MaskedInstructionDesc):
 		self.add_constant(10, 1, 0)
 		self.add_constant(47, 1, 1)
 
+		self.add_operand(ImmediateDesc('q16', 16, 4))
+		self.add_operand(ImmediateDesc('q17', 24, 2))
+		self.add_operand(ImmediateDesc('q18', 27, 3))
+		self.add_operand(ImmediateDesc('q19', 31, 1))
+
 		#self.add_constant(16, 4, 1)
 		#self.add_constant(24, 2, 1)
 		#self.add_constant(27, 3, 0)
