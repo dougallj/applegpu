@@ -31,6 +31,8 @@ SR_NAMES = {
 	8:  'dispatch_threads_per_threadgroup.x',
 	9:  'dispatch_threads_per_threadgroup.y',
 	10: 'dispatch_threads_per_threadgroup.z',
+	20: 'core_index',
+	21: 'vm_slot',
 	48: 'thread_position_in_threadgroup.x',
 	49: 'thread_position_in_threadgroup.y',
 	50: 'thread_position_in_threadgroup.z',
@@ -51,6 +53,11 @@ SR_NAMES = {
 	80: 'thread_position_in_grid.x',
 	81: 'thread_position_in_grid.y',
 	82: 'thread_position_in_grid.z',
+	124: 'input_sample_mask',
+	144: 'opfifo_cmd',
+	146: 'opfifo_data_l',
+	147: 'opfifo_data_h',
+
 }
 
 def opcode_to_number(opcode):
