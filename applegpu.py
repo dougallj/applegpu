@@ -31,6 +31,8 @@ SR_NAMES = {
 	8:  'dispatch_threads_per_threadgroup.x',
 	9:  'dispatch_threads_per_threadgroup.y',
 	10: 'dispatch_threads_per_threadgroup.z',
+	20: 'core_index',
+	21: 'vm_slot',
 	48: 'thread_position_in_threadgroup.x',
 	49: 'thread_position_in_threadgroup.y',
 	50: 'thread_position_in_threadgroup.z',
@@ -51,6 +53,11 @@ SR_NAMES = {
 	80: 'thread_position_in_grid.x',
 	81: 'thread_position_in_grid.y',
 	82: 'thread_position_in_grid.z',
+	124: 'input_sample_mask',
+	144: 'opfifo_cmd',
+	146: 'opfifo_data_l',
+	147: 'opfifo_data_h',
+
 }
 
 def opcode_to_number(opcode):
@@ -5667,16 +5674,16 @@ class Unk0CInstructionDesc(InstructionDesc):
 		self.add_constant(0, 16, 0x0C)
 
 @register
-class Unk28InstructionDesc(InstructionDesc):
+class DoorbellInstructionDesc(InstructionDesc):
 	def __init__(self):
-		super().__init__('TODO.unk28', size=2)
+		super().__init__('doorbell', size=2)
 		self.add_constant(0, 8, 0x28)
 		self.add_operand(ImmediateDesc('imm', 8, 8))
 
 @register
-class Unk20InstructionDesc(InstructionDesc):
+class JumpNoDoorbellInstructionDesc(InstructionDesc):
 	def __init__(self):
-		super().__init__('TODO.br20', size=4)
+		super().__init__('jmp_if_skipping_doorbell', size=4)
 		self.add_constant(0, 16, 0x20)
 		self.add_operand(BranchOffsetDesc('off', 16, 8))
 		self.add_constant(24, 8, 0)
@@ -5827,29 +5834,51 @@ class TodoPopExecInstructionDesc(MaskedInstructionDesc):
 		self.add_operand(ImmediateDesc('n', 11, 2))
 
 @register
-class Unk75InstructionDesc(MaskedInstructionDesc):
+class MapInstructionDesc(MaskedInstructionDesc):
 	def __init__(self):
-		super().__init__('TODO.unk75', size=8) # maybe: size=(6, 8), length_bit_pos=47)
+		super().__init__('map', size=8) # maybe: size=(6, 8), length_bit_pos=47)
 		self.add_constant(0, 8, 0x75)
 		self.add_constant(10, 1, 0)
 		self.add_constant(47, 1, 1)
 
-		self.add_constant(16, 4, 1)
+		self.add_operand(EnumDesc('op', 16, 4, {
+			0: 'unmap',
+			1: 'map'
+		}))
+
+		# Unclear exactly what.
+		self.add_operand(EnumDesc('target', 36, 1, {
+			0: 'target0',
+			1: 'target1'
+		}))
+
 		self.add_constant(24, 2, 1)
 		self.add_constant(27, 3, 0)
 		self.add_constant(31, 1, 0)
 
+		# Register input
 		self.add_operand(ExReg32Desc('R', 11, 40))
+
+		# Immediate value 0, 1, 2, 3
 		self.add_operand(StackAdjustmentDesc('v'))
 
-		self.add_operand(BinaryDesc('q1', 8, 2))
-		#self.add_operand(BinaryDesc('q2', 30, 2))
-		#self.add_operand(BinaryDesc('q3', 43, 5))
-		#self.add_operand(BinaryDesc('kill', 69, 3))
-		#self.add_operand(BinaryDesc('q5', 63, 1))
-		#self.add_operand(BinaryDesc('q6', 86, 5))
+		self.add_operand(BinaryDesc('q1', 8, 2)) #0
+		self.add_operand(BinaryDesc('q2', 30, 1)) #0
+		self.add_operand(BinaryDesc('q3', 37, 3)) #0
+		self.add_operand(BinaryDesc('q4', 42, 5)) #0b10000
+		self.add_operand(BinaryDesc('q5', 48, 8)) #0b00010000
 
 		# TODO: 75 0A 10 05 10 80 12 00
+
+	def map_to_alias(self, mnem, operands):
+		op = operands[0]
+		if op == 'unmap':
+			return 'unmap', operands[1:]
+		elif op == 'map':
+			return 'map', operands[1:]
+		else:
+			return 'TODO.map', operands
+
 
 @register
 class Unk75AltInstructionDesc(MaskedInstructionDesc):
@@ -5858,6 +5887,11 @@ class Unk75AltInstructionDesc(MaskedInstructionDesc):
 		self.add_constant(0, 8, 0x75)
 		self.add_constant(10, 1, 0)
 		self.add_constant(47, 1, 1)
+
+		self.add_operand(ImmediateDesc('q16', 16, 4))
+		self.add_operand(ImmediateDesc('q17', 24, 2))
+		self.add_operand(ImmediateDesc('q18', 27, 3))
+		self.add_operand(ImmediateDesc('q19', 31, 1))
 
 		#self.add_constant(16, 4, 1)
 		#self.add_constant(24, 2, 1)
