@@ -4499,6 +4499,8 @@ MEMORY_FORMATS = {
 
 	12: 'rg11b10f',  # size = 1
 	13: 'rgb9e5',    # size = 1
+	14: 'rg11b10f.rtz', # size = 1
+	15: 'rgb9e5.rtz',   # size = 1
 
 	# TODO: others?
 }
