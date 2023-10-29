@@ -5,7 +5,7 @@ import applegpu
 VERBOSE = False
 STOP_ON_STOP = True
 
-def disassemble(code):
+def disassemble(code, code_offset = 0):
 	p = 0
 	end = False
 	skipping = False
@@ -25,7 +25,7 @@ def disassemble(code):
 			if o.matches(n):
 				mnem = o.decode_mnem(n)
 				length = o.decode_size(n)
-				asm = str(o.disassemble(n, pc=p))
+				asm = str(o.disassemble(n, pc = p + code_offset))
 				if VERBOSE:
 					asm = asm.ljust(60) + '\t'
 					fields = '[' + ', '.join('%s=%r' % i for i in o.decode_fields(n)) + ']'
@@ -33,13 +33,13 @@ def disassemble(code):
 					if rem:
 						fields = fields.ljust(85) + ' ' + str(rem)
 					asm += fields
-				print('%4x:' % p, code[p:p+length].hex().ljust(20), asm)
+				print('%4x:' % (p + code_offset), code[p:p+length].hex().ljust(20), asm)
 				if mnem == 'stop':
 					if STOP_ON_STOP:
 						end = True
 				break
 		else:
-			print('%4x:' % p, code[p:p+2].hex().ljust(20), '<disassembly failed>')
+			print('%4x:' % (p + code_offset), code[p:p+2].hex().ljust(20), '<disassembly failed>')
 
 		assert length >= 2 and length % 2 == 0
 		p += length

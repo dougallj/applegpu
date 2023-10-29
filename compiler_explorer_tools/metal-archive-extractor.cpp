@@ -224,7 +224,12 @@ static Buffer findSymbol(Buffer buffer, const char* segment, const char* section
 	return { buffer.offsetPtr(begin - section->addr + section->offset), end - begin };
 }
 
-static std::vector<const char*> findAllSymbols(Buffer buffer, const char* segment, const char* sectionName) {
+struct GPUFunction {
+	const char* name;
+	uint64_t offset;
+};
+
+static std::vector<GPUFunction> findAllSymbols(Buffer buffer, const char* segment, const char* sectionName) {
 	section_64* section;
 	symtab_command* cmd;
 	char* strings;
@@ -232,7 +237,7 @@ static std::vector<const char*> findAllSymbols(Buffer buffer, const char* segmen
 	if (!findSymtab(buffer, segment, sectionName, &section, &cmd, &strings, &symbols)) {
 		return {};
 	}
-	std::vector<const char*> out;
+	std::vector<GPUFunction> out;
 	for (uint32_t i = 0; i < cmd->nsyms; i++) {
 		uint32_t stroff = symbols[i].n_un.n_strx;
 		uint32_t limit = cmd->strsize - stroff;
@@ -241,7 +246,7 @@ static std::vector<const char*> findAllSymbols(Buffer buffer, const char* segmen
 			continue;
 		}
 		if (symbols[i].n_value - section->addr < section->size) {
-			out.push_back(strings + stroff);
+			out.push_back({ strings + stroff, symbols[i].n_value - section->addr });
 		}
 	}
 	return out;
@@ -380,8 +385,8 @@ int main(int argc, char* argv[]) {
 	Buffer gpu = findGPU(buffer);
 	if (!gpu) { return EXIT_FAILURE; }
 	if (cmd_list) {
-		for (const char* symbol : findAllSymbols(gpu, "__TEXT", "__text"))
-			puts(symbol);
+		for (GPUFunction symbol : findAllSymbols(gpu, "__TEXT", "__text"))
+			printf("0x%llx %s\n", symbol.offset, symbol.name);
 	} else if (extract_section) {
 		if (vertex_out)   { dumpSection(gpu, vertex_out,   "__TEXT", "__vertex"  ); }
 		if (fragment_out) { dumpSection(gpu, fragment_out, "__TEXT", "__fragment"); }

@@ -40,10 +40,12 @@ if __name__ == '__main__':
 			shaders = read_shader_archive(filename)
 	for shaderType, shader in shaders:
 		list = subprocess.check_output([archiveExtractor, '--list-shaders', '-'], input=shader).decode("utf-8").split("\n")
+		list = [x.partition(' ') for x in list]
 		sort_order = {"_agc.main.constant_program": 1, "_agc.main": 2}
-		list.sort(key=lambda x: sort_order.get(x, 0))
+		list.sort(key=lambda x: sort_order.get(x[2], 0))
 		found = False
-		for name in list:
+		use_offsets = False
+		for (offset, _, name) in list:
 			if not name.strip():
 				continue
 			data = subprocess.check_output([archiveExtractor, '--extract-named-shader', name, '--output', '-', '-'], input=shader)
@@ -52,6 +54,10 @@ if __name__ == '__main__':
 				data = data[:-2]
 			if not any(byte != 0 for byte in data):
 				continue
+			# Use offsets if any functions exist that could be called by main
+			# (We've sorted the functions so main comes last, so doing this in the loop should be fine)
+			if name not in sort_order:
+				use_offsets = True
 			found = True
 			friendly_names = {
 				"_agc.main.constant_program": "shader prolog",
@@ -59,7 +65,8 @@ if __name__ == '__main__':
 			}
 			friendly_name = friendly_names.get(name, name)
 			print(f"{shaderType} {friendly_name}:")
-			disassemble.disassemble(data)
+			code_offset = int(offset, 0) if use_offsets else 0
+			disassemble.disassemble(data, code_offset=code_offset)
 			print()
 		if found:
 			print()
