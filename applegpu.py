@@ -4611,20 +4611,22 @@ class VarTripleRegisterDesc(OperandDesc):
 		return t
 
 class CFDesc(OperandDesc):
-	def __init__(self, name, off=16, offx=58): #, offt=62):
+	def __init__(self, name, off=16, offx=58, offt=23):
 		super().__init__(name)
 		self.add_merged_field(self.name, [
 			(off, 6, self.name),
 			(offx, 2, self.name + 'x'),
 		])
-		#self.add_field(offt, 1, self.name + 't')
+		self.add_field(offt, 1, self.name + 't')
 
 	def decode(self, fields):
-		#flags = fields[self.name + 't']
+		flags = fields[self.name + 't']
 		value = fields[self.name]
 
-		#if flags == 0b0:
-		return CF(value)
+		if flags == 0b0:
+			return CF(value)
+		else:
+			return Reg16(value)
 
 class CFPerspectiveDesc(OperandDesc):
 	def __init__(self, name, off=24, offx=60): #, offt=62):
@@ -4704,7 +4706,6 @@ class IterateDesc(InstructionDesc):
             3: 'sample',
 		}))
 		self.add_operand(BinaryDesc('kill', 52, 1)) # Kill helper invocations 
-		self.add_operand(ImmediateDesc('unk0', 23, 1)) # 0
 		self.add_operand(ImmediateDesc('unk1', 40, 6)) # 0
 		self.add_operand(ImmediateDesc('unk2', 47, 1)) # 0
 		self.add_operand(ImmediateDesc('unk3', 50, 2)) # 0
