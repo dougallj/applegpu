@@ -4441,20 +4441,6 @@ for op1, op2, name in [
 
 
 
-for op, mnem in [
-	(0b01010001, 'no_var'),
-	(0b00010001, 'st_var'),
-	(0b10010001, 'st_var_final'),
-]:
-	o = InstructionDesc(mnem, size=4)
-	o.add_constant(0, 10, op)
-	o.add_constant(22, 2, 2)
-	# set with "no var" case
-	o.add_operand(ImmediateDesc('u', 31, 1))
-	o.add_operand(ExReg32Desc('r', 10, 24))
-	o.add_operand(ImmediateDesc('i', [(16, 6, 'I'), (26, 2, 'Ix')]))
-	instruction_descriptors.append(o)
-
 
 o = InstructionDesc('wait_pix', size=4)
 o.add_constant(0, 8, 0b01001000)
@@ -4612,21 +4598,41 @@ class VarTripleRegisterDesc(OperandDesc):
 
 		return t
 
-class CFDesc(OperandDesc):
-	def __init__(self, name, off=16, offx=58): #, offt=62):
+class UVSIndexDesc(OperandDesc):
+	def __init__(self, name, off=16, offx=26, offt=23):
 		super().__init__(name)
 		self.add_merged_field(self.name, [
 			(off, 6, self.name),
 			(offx, 2, self.name + 'x'),
 		])
-		#self.add_field(offt, 1, self.name + 't')
+		self.add_field(offt, 1, self.name + 't')
 
 	def decode(self, fields):
-		#flags = fields[self.name + 't']
+		flags = fields[self.name + 't']
 		value = fields[self.name]
 
-		#if flags == 0b0:
-		return CF(value)
+		if flags == 0b0:
+			return Reg16(value)
+		else:
+			return Immediate(value)
+
+class CFDesc(OperandDesc):
+	def __init__(self, name, off=16, offx=58, offt=23):
+		super().__init__(name)
+		self.add_merged_field(self.name, [
+			(off, 6, self.name),
+			(offx, 2, self.name + 'x'),
+		])
+		self.add_field(offt, 1, self.name + 't')
+
+	def decode(self, fields):
+		flags = fields[self.name + 't']
+		value = fields[self.name]
+
+		if flags == 0b0:
+			return CF(value)
+		else:
+			return Reg16(value)
 
 class CFPerspectiveDesc(OperandDesc):
 	def __init__(self, name, off=24, offx=60): #, offt=62):
@@ -4706,7 +4712,6 @@ class IterateDesc(InstructionDesc):
             3: 'sample',
 		}))
 		self.add_operand(BinaryDesc('kill', 52, 1)) # Kill helper invocations 
-		self.add_operand(ImmediateDesc('unk0', 23, 1)) # 0
 		self.add_operand(ImmediateDesc('unk1', 40, 6)) # 0
 		self.add_operand(ImmediateDesc('unk2', 47, 1)) # 0
 		self.add_operand(ImmediateDesc('unk3', 50, 2)) # 0
@@ -4769,6 +4774,21 @@ class StoreToUniformInstructionDesc(InstructionDesc):
 		# memory index is ureg16 number - e.g. r6l = 12
 		self.add_operand(MemoryIndexDesc('O'))
 		self.add_operand(MemoryShiftDesc('s'))
+
+for op, mnem in [
+	(0b01010001, 'no_var'),
+	(0b00010001, 'st_var'),
+	(0b10010001, 'st_var_final'),
+]:
+	o = InstructionDesc(mnem, size=4)
+	o.add_constant(0, 10, op)
+	o.add_constant(22, 1, 0)
+	# set with "no var" case
+	o.add_operand(ImmediateDesc('u', 31, 1))
+	o.add_operand(ExReg32Desc('r', 10, 24))
+	o.add_operand(UVSIndexDesc('I'))
+	instruction_descriptors.append(o)
+
 
 
 class AsyncLoadStoreInstructionDesc(MaskedInstructionDesc):
