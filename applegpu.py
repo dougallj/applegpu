@@ -2957,6 +2957,7 @@ class BitopInstructionDesc(MaskedInstructionDesc):
 			'0110': 'xor',
 			'1110': 'nand',
 			'1000': 'nor',
+			'1001': 'xnor',
 		}
 		self.unary_aliases = {
 			'1010': 'not',
