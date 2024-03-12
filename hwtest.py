@@ -624,7 +624,7 @@ def test_memory():
 
 					code += assemble.assemble_line('get_sr r2, sr80')
 
-					code += assemble.assemble_line('device_load 1, 0, 0, 4, 0, ' + str(i) + ', '+str(j)+', '+out+', r0_r1, r2, unsigned, lsl ' + str(shift))
+					code += assemble.assemble_line('device_load 1, 0, 0, 4, 0, ' + str(i) + ', '+str(j)+', '+out+', r0_r1, r2, offset_unsigned, lsl ' + str(shift))
 
 					code += assemble.assemble_line('wait 0')
 
@@ -651,7 +651,7 @@ def test_memory():
 
 					code += assemble.assemble_line('get_sr r2, sr80')
 
-					code += assemble.assemble_line('device_load 1, 0, 0, 4, 0, ' + str(i) + ', '+str(j)+', '+out+', r0_r1, r2, unsigned, lsl ' + str(shift))
+					code += assemble.assemble_line('device_load 1, 0, 0, 4, 0, ' + str(i) + ', '+str(j)+', '+out+', r0_r1, r2, offset_unsigned, lsl ' + str(shift))
 
 					code += assemble.assemble_line('wait 0')
 
@@ -686,7 +686,7 @@ def test_memory():
 
 					code += assemble.assemble_line('get_sr r2, sr80')
 
-					code += assemble.assemble_line('device_load 1, 0, 0, 4, 0, ' + str(i) + ', '+str(j)+', '+out+', r0_r1, r2, unsigned, lsl ' + str(shift))
+					code += assemble.assemble_line('device_load 1, 0, 0, 4, 0, ' + str(i) + ', '+str(j)+', '+out+', r0_r1, r2, offset_unsigned, lsl ' + str(shift))
 
 					code += assemble.assemble_line('wait 0')
 
@@ -711,7 +711,7 @@ def test_memory():
 
 		code += assemble.assemble_line('get_sr r2, sr80')
 
-		code += assemble.assemble_line('device_load 1, 0, 0, 4, 0, ' + str(i) + ', 15, r3_r4_r5_r6, r0_r1, r2, unsigned, lsl 1')
+		code += assemble.assemble_line('device_load 1, 0, 0, 4, 0, ' + str(i) + ', 15, r3_r4_r5_r6, r0_r1, r2, offset_unsigned, lsl 1')
 		code += assemble.assemble_line('wait 0')
 
 		code += assemble.assemble_line('mov_imm r0, 0')
@@ -735,7 +735,7 @@ def test_memory():
 
 		code += assemble.assemble_line('get_sr r4, sr80')
 
-		code += assemble.assemble_line('device_load 1, 0, 0, 4, 0, i8, '+str(i)+', r3_r4, r0_r1, r4, unsigned, lsl 0')
+		code += assemble.assemble_line('device_load 1, 0, 0, 4, 0, i8, '+str(i)+', r3_r4, r0_r1, r4, offset_unsigned, lsl 0')
 
 		code += assemble.assemble_line('wait 0')
 
@@ -761,9 +761,9 @@ def test_memory():
 
 		code += assemble.assemble_line('get_sr r3, sr80')
 
-		code += assemble.assemble_line('device_load 1, 0, 0, 4, 0, ' + str(i) + ', 3, r5_r6, r1_r2, r3, unsigned, lsl 0')
+		code += assemble.assemble_line('device_load 1, 0, 0, 4, 0, ' + str(i) + ', 3, r5_r6, r1_r2, r3, offset_unsigned, lsl 0')
 		if i != 2:
-			code += assemble.assemble_line('device_load 1, 0, 0, 4, 0, ' + str(i) + ', 3, r0l_r0h, r1_r2, r3, unsigned, lsl 0')
+			code += assemble.assemble_line('device_load 1, 0, 0, 4, 0, ' + str(i) + ', 3, r0l_r0h, r1_r2, r3, offset_unsigned, lsl 0')
 
 		code += assemble.assemble_line('wait 0')
 
