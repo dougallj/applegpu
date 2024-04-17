@@ -13,6 +13,7 @@ struct Buffer {
 	void* data;
 	size_t size;
 	bool inBounds(void* ptr) { return static_cast<char*>(ptr) - static_cast<char*>(data) < size; }
+	bool endInBounds(void* ptr) { return static_cast<char*>(ptr) - static_cast<char*>(data) <= size; }
 	template <typename T = void>
 	T* offsetPtr(size_t offset) const { return reinterpret_cast<T*>(static_cast<char*>(data) + offset);}
 	operator bool() { return data; }
@@ -175,7 +176,7 @@ static bool findSymtab(Buffer buffer, const char* segment, const char* sectionNa
 	if (!*section) { return false; }
 	*cmd = reinterpret_cast<symtab_command*>(findCommand(buffer, nullptr, isSymtab));
 	*strings = buffer.offsetPtr<char>((*cmd)->stroff);
-	if (!buffer.inBounds(*strings + (*cmd)->strsize)) {
+	if (!buffer.endInBounds(*strings + (*cmd)->strsize)) {
 		fprintf(stderr, "String table is out of bounds!\n");
 		return false;
 	}
