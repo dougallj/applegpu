@@ -11,7 +11,7 @@ archiveExtractor = os.path.join(toolsDir, 'metal-archive-extractor')
 
 def read_shader_archive(archiveName):
 	output = []
-	for shaderType in ('vertex', 'fragment', 'compute'):
+	for shaderType in ('vertex', 'fragment', 'compute', 'dylib'):
 		shader = subprocess.check_output([archiveExtractor, '--extract-' + shaderType, '-', archiveName])
 		if shader:
 			output.append((shaderType, shader))

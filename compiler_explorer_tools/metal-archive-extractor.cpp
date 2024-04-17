@@ -103,6 +103,11 @@ static Buffer findGPU(Buffer buffer) {
 	return {};
 }
 
+static bool isDylib(Buffer buffer) {
+	mach_header_64* mach_header = static_cast<mach_header_64*>(buffer.data);
+	return buffer.inBounds(mach_header + 1) && mach_header->filetype == MH_GPU_DYLIB;
+}
+
 static void* findCommand(Buffer buffer, void* ctx, void* (*isMyCommand)(void* ctx, load_command*)) {
 	mach_header_64* header = static_cast<mach_header_64*>(buffer.data);
 	if (!buffer.inBounds(header + 1)) {
@@ -300,6 +305,7 @@ static constexpr option longOpts[] = {
 	{"extract-vertex",         required_argument, nullptr, 'v'},
 	{"extract-fragment",       required_argument, nullptr, 'f'},
 	{"extract-compute",        required_argument, nullptr, 'c'},
+	{"extract-dylib",          required_argument, nullptr, 'd'},
 	{"extract-prolog-shader",  required_argument, nullptr, 'p'},
 	{"extract-main-shader",    required_argument, nullptr, 'm'},
 	{"list-shaders",           no_argument,       nullptr, 'l'},
@@ -315,13 +321,14 @@ int main(int argc, char* argv[]) {
 	const char* vertex_out = nullptr;
 	const char* fragment_out = nullptr;
 	const char* compute_out = nullptr;
+	const char* dylib_out = nullptr;
 	const char* prolog_out = nullptr;
 	const char* main_out = nullptr;
 	const char* extract_name = nullptr;
 	const char* other_out = nullptr;
 	bool cmd_list = false;
 	int c;
-	while ((c = getopt_long(argc, argv, "v:f:c:p:m:l", longOpts, nullptr)) > 0) {
+	while ((c = getopt_long(argc, argv, "v:f:c:d:p:m:l", longOpts, nullptr)) > 0) {
 		switch (c) {
 			case 'v':
 				vertex_out = optarg;
@@ -331,6 +338,9 @@ int main(int argc, char* argv[]) {
 				break;
 			case 'c':
 				compute_out = optarg;
+				break;
+			case 'd':
+				dylib_out = optarg;
 				break;
 			case 'p':
 				prolog_out = optarg;
@@ -357,7 +367,7 @@ int main(int argc, char* argv[]) {
 				printUsageAndExit(argv[0]);
 		}
 	}
-	bool extract_section = vertex_out || fragment_out || compute_out;
+	bool extract_section = vertex_out || fragment_out || compute_out || dylib_out;
 	bool extract_subsection = prolog_out || main_out || extract_name;
 	if (extract_section && extract_subsection) {
 		fprintf(stderr, "Can't combine archive extract options and agx extract options!\n");
@@ -392,6 +402,10 @@ int main(int argc, char* argv[]) {
 		if (vertex_out)   { dumpSection(gpu, vertex_out,   "__TEXT", "__vertex"  ); }
 		if (fragment_out) { dumpSection(gpu, fragment_out, "__TEXT", "__fragment"); }
 		if (compute_out)  { dumpSection(gpu, compute_out,  "__TEXT", "__compute" ); }
+		// Contained program also uses `__TEXT,__text` section, so make extra sure this is a dylib before trying to extract
+		if (dylib_out && isDylib(gpu)) {
+			dumpSection(gpu, dylib_out, "__TEXT", "__text" );
+		}
 	} else if (extract_subsection) {
 		if (prolog_out)   { dumpSymbol(gpu, prolog_out, "__TEXT", "__text", "_agc.main.constant_program"); }
 		if (main_out)     { dumpSymbol(gpu, main_out,   "__TEXT", "__text", "_agc.main"); }
