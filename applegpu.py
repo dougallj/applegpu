@@ -1595,14 +1595,11 @@ class BranchOffsetDesc(FieldDesc):
 				value = try_parse_integer(s[2:])
 				if value is not None:
 					masked = value & ((1 << self.size) - 1)
-					print('value', value, hex(masked))
 					if value != sign_extend(masked, self.size):
 						raise Exception('out of range BranchOffsetDesc %r' % (opstr,))
 					fields[self.name] = masked
-					print(fields)
 					return
 
-		# TODO: labels, somehow
 		raise Exception('invalid BranchOffsetDesc %r' % (opstr,))
 
 
