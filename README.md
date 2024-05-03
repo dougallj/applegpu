@@ -57,19 +57,15 @@ However, it is used in the hardware tests.
 
 ## Hardware tests
 
-Hardware tests run instructions on the actual GPU (so can only run on Apple Silicon), and emulate them, and compare state afterwards. This is achieved using a modified version of Alyssa Rosenzweig's wrap.dylib from https://github.com/AsahiLinux/gpu
-
-To build the testbed: `cd hwtestbed && make`
+Hardware tests run instructions on the actual GPU (so can only run on Apple Silicon), and emulate them, and compare state afterwards. This is achieved overwriting shader code in Metal binary archives with our own shaders.
 
 To run the tests: `python3 hwtest.py`
 
-This will take ages, but builds a cache in `hwtestbed/cache` allowing future runs to be a bit faster. I generally comment out what I'm not working on. The disk is used extensively to communicate between python and the injected dylib - this could be fixed. It's probably not the worst culprit, but I wouldn't run the tests if you're trying to avoid hammering your disk (https://twitter.com/marcan42/status/1361160838854316032)
-
-With a bit of work it should be possible to test much better and much more quickly (i.e. explicitly test cases that actually matter, rather than iterating through every combination we think might do something that might matter).
+Note: The python script will automatically compile its C helpers if they didn't yet exist, but not if they do exist but are out of date.  You can manually recompile with `make -C hwtestbed -j8`
 
 Hardware testing is great because it's hard to mess up, quick to add new tests, and we have tests. Most other things about it are currently not great. The tests are a bit scattershot - some tests are thorough, but others only test what had to be work to implement other tests. It can be hard to see what's covered, so I've found it useful to experimentally break things to see if they're being covered by the tests or not.
 
-Also, there's also no cache invalidation, there are hardcode offsets, there's tons of dead code, and I'm generally afraid to modify the code in hwtestbed because any changes to how it configures the GPU might break all the tests, and it'd be painful to rebuild my cache to make sure it's all still working. `main.mm` and `compute.metal` were written with this in mind, and should be flexible enough to allow uniform register tests and device memory tests to be added.
+If you just want to play around, try out `python3 hwtestbed.py <shader code>`.  Use `python3 hwtestbed.py --help` for its full set of options.  If you want to specify a lot of input registers, bash's brace expansion syntax can make this a lot easier e.g. `-r{"0,1","2,3","4,5","6,7"}{,,,,,,,}` expands to `-r0,1 -r2,3 -r4,5 -r6,7 -r0,1 -r2,3 -r4,5 -r6,7 ...` (32 total threads).
 
 ## Documentation
 
