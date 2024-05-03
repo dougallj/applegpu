@@ -1,16 +1,10 @@
-all: compute.metallib hwtestbed main replacer.dylib
+all: compute.metallib hwtestbed
 
 compute.metallib: compute.air
 	xcrun -sdk macosx metallib -o $@ $^
 
 hwtestbed: hwtestbed.o runner-mac.o
 	xcrun -sdk macosx clang++ -framework Metal -fobjc-arc -O3 -o $@ $^
-
-main: main.mm
-	xcrun -sdk macosx clang++ -framework Metal -fobjc-arc -O3 -o $@ main.mm
-
-replacer.dylib: replacer.c
-	clang replacer.c -framework IOKit -dynamiclib -o $@
 
 %.air: %.metal
 	xcrun -sdk macosx metal -MMD -c -std=osx-metal2.0 -O3 -o $@ $<
@@ -24,6 +18,6 @@ replacer.dylib: replacer.c
 -include *.d
 
 clean:
-	rm *.metallib *.air *.o *.d hwtestbed main *.dylib
+	rm *.metallib *.air *.o *.d hwtestbed
 
 .PHONY: clean all
