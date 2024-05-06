@@ -2,8 +2,11 @@ import struct
 import subprocess
 import hashlib
 import os
+import tempfile
 import applegpu
 import assemble
+import argparse
+import hwtestbed
 # TODO: this could be vastly improved by using the assembler for things
 
 # TODO: many of these tests miss edge cases - it'd be great to do floating
@@ -11,14 +14,19 @@ import assemble
 # rounding actually breaks the tests. And lots of little oversights like
 # test_exec_ops ignoring all floating point exec operations.
 
-
-CACHE_ENABLED = True
 VERBOSE = False
+
+parser = argparse.ArgumentParser(description='AGX test suite')
+parser.add_argument('-t', '--tempdir', help='Directory to place temporary files')
+args = parser.parse_args()
+
+tmpdir = tempfile.TemporaryDirectory(dir=args.tempdir)
+testbed = hwtestbed.HWTestBed(os.path.join(tmpdir.name, 'compute.metallib'))
 
 os.chdir('hwtestbed')
 
-if not os.path.exists('cache'):
-	os.mkdir('cache')
+def slice_length(item, offset, length):
+	return item[offset:offset+length]
 
 def mov_imm(reg, value):
 	return b'\x62' + struct.pack('<BI', reg << 2 | 1, value)
@@ -53,36 +61,29 @@ def test(test_opcodes, state=None, n=32, extra_data=b''):
 	).replace(' ', ''))
 
 	sz = 32 * 4 * n
+	buf_sz = 4 * 4 * n
 
 	assert len(code) <= 1024
 
-	if extra_data != b'':
-		key = repr((code, n, sz, state, extra_data))
-	else:
-		key = repr((code, n, sz, state))
-	cache_path = 'cache/' + hashlib.sha224(key.encode('utf-8')).hexdigest()
-	if CACHE_ENABLED and os.path.exists(cache_path):
-		with open(cache_path, 'r') as f:
-			r = f.read()
-	else:
-		with open('replace.bin', 'wb') as f:
-			f.write(code)
+	buffers = (bytearray(), bytearray())
+	for i in range(n):
+		for j in range(4):
+			idx = i * 4 + j
+			buffers[0].extend(struct.pack('=I', state[j][i]))
+			buffers[1].extend(struct.pack('=I', state[4+j][i]))
+	buffers[0].extend(extra_data)
+	request = hwtestbed.HWTestBedRequest(shader=code, tg_size=(n, 1, 1), tgsm=0x100)
+	for i in range(len(buffers)):
+		request.set_buffer(i, buffers[i])
+	request.request_result(0, len(buffers[0]))
+	for i in range(1, 8):
+		request.request_result(i, buf_sz)
+	result = testbed.run(request)
 
-		with open('in0.bin','wb') as f0:
-			with open('in1.bin','wb') as f1:
-				for i in range(n):
-					for j in range(4):
-						f0.write(struct.pack('<I', state[j][i]))
-						f1.write(struct.pack('<I', state[4+j][i]))
-				f0.write(extra_data)
-
-		r = subprocess.check_output("DYLD_INSERT_LIBRARIES='./replacer.dylib' ./main %d %d in0.bin in1.bin" % (n, sz), shell=True)
-		r = r.decode('utf-8')
-		with open(cache_path, 'w') as f:
-			f.write(r)
-		with open(cache_path + '.key', 'w') as f:
-			f.write(key)
-	return eval(r)[:9]
+	res = [[struct.unpack('=I', slice_length(result.buffers[i // 4], (j * 4 + i % 4) * 4, 4))[0] for j in range(n)] for i in range(32)]
+	# Add the extra memory to the end
+	res.append(result.buffers[0][buf_sz:])
+	return res
 
 def core_state_to_state(cs):
 	state = []
@@ -97,6 +98,13 @@ def diff_core_state_and_state(cs, state):
 			sim, real = cs.get_reg32(regid, thread), state[regid][thread]
 			if sim != real:
 				print('[%d][%2d]: real=0x%x sim=0x%x' % (regid, thread, real, sim))
+				matches = False
+		mem = state[32]
+		for i in range(0, len(mem), 4):
+			real = struct.unpack('<I', mem[i:i+4])
+			sim = cs.device_memory.get_u32(TEST_ADDRESS + 512 + i)
+			if sim != real:
+				print('Mem[%3d]: real=0x%x sim=0x%x' % (512 + i, real, sim))
 				matches = False
 	return matches
 
@@ -840,3 +848,5 @@ def main():
 
 
 main()
+
+tmpdir.cleanup()

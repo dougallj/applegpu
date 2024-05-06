@@ -78,6 +78,13 @@ def assemble_multiline(lines, print_asm=False):
 		raise ValueError(f'Missing required labels: {missing}')
 	return output
 
+def assemble_file(path, is_binary=False):
+	if is_binary:
+		with open(path, 'rb') as file:
+			return file.read()
+	else:
+		with open(path, 'r') as file:
+			return assemble_multiline(file)
 
 if __name__ == '__main__':
 	def printUsageAndExit():

@@ -108,25 +108,45 @@ static bool isDylib(Buffer buffer) {
 	return buffer.inBounds(mach_header + 1) && mach_header->filetype == MH_GPU_DYLIB;
 }
 
-static void* findCommand(Buffer buffer, void* ctx, void* (*isMyCommand)(void* ctx, load_command*)) {
-	mach_header_64* header = static_cast<mach_header_64*>(buffer.data);
-	if (!buffer.inBounds(header + 1)) {
-		fprintf(stderr, "File too small for mach-o header!\n");
-		return nullptr;
+struct LoadCommandIterator {
+	Buffer buffer;
+	load_command* current;
+	uint32_t ncmds;
+
+	LoadCommandIterator(Buffer buffer) : buffer(buffer), current(nullptr), ncmds(0) {
+		mach_header_64* header = static_cast<mach_header_64*>(buffer.data);
+		if (!buffer.inBounds(header + 1)) {
+			fprintf(stderr, "File too small for mach-o header!\n");
+			return;
+		}
+		if (header->magic == MH_CIGAM_64) {
+			fprintf(stderr, "Non-native-endian mach-o files currently unsupported\n");
+			return;
+		} else if (header->magic != MH_MAGIC_64) {
+			fprintf(stderr, "Bad mach-o magic\n");
+			return;
+		}
+		current = reinterpret_cast<load_command*>(header + 1);
+		ncmds = header->ncmds;
 	}
-	if (header->magic == MH_CIGAM_64) {
-		fprintf(stderr, "Non-native-endian mach-o files currently unsupported\n");
-		return nullptr;
-	} else if (header->magic != MH_MAGIC_64) {
-		fprintf(stderr, "Bad mach-o magic\n");
-		return nullptr;
-	}
-	load_command* lc = reinterpret_cast<load_command*>(header + 1);
-	for (uint32_t i = 0; i < header->ncmds; i++, lc = reinterpret_cast<load_command*>(reinterpret_cast<char*>(lc) + lc->cmdsize)) {
+
+	load_command* next() {
+		if (!ncmds)
+			return nullptr;
+		load_command* lc = current;
 		if (!buffer.inBounds(lc + 1) || !buffer.inBounds(reinterpret_cast<char*>(lc) + lc->cmdsize)) {
 			fprintf(stderr, "Load commands went out of bounds!\n");
-			return {};
+			return nullptr;
 		}
+		current = reinterpret_cast<load_command*>(reinterpret_cast<char*>(current) + current->cmdsize);
+		ncmds -= 1;
+		return lc;
+	}
+};
+
+static void* findCommand(Buffer buffer, void* ctx, void* (*isMyCommand)(void* ctx, load_command*)) {
+	LoadCommandIterator iter(buffer);
+	while (load_command* lc = iter.next()) {
 		if (void* res = isMyCommand(ctx, lc)) {
 			return res;
 		}
@@ -140,14 +160,20 @@ struct FindSectionCtx {
 	const char* section;
 };
 
-static void* findSectionHelper(void* vctx, load_command* cmd) {
-	FindSectionCtx* ctx = static_cast<FindSectionCtx*>(vctx);
+static segment_command_64* getSegmentCommand(load_command* cmd) {
 	if (cmd->cmdsize < sizeof(segment_command_64) || cmd->cmd != LC_SEGMENT_64) { return nullptr; }
 	segment_command_64* segment = reinterpret_cast<segment_command_64*>(cmd);
 	if (segment->cmdsize < segment->nsects * sizeof(section_64) + sizeof(segment_command_64)) {
 		fprintf(stderr, "Segments %.16s is too small for its section list\n", segment->segname);
 		return nullptr;
 	}
+	return segment;
+}
+
+static void* findSectionHelper(void* vctx, load_command* cmd) {
+	FindSectionCtx* ctx = static_cast<FindSectionCtx*>(vctx);
+	segment_command_64* segment = getSegmentCommand(cmd);
+	if (!segment) { return nullptr; }
 	section_64* sections = reinterpret_cast<section_64*>(segment + 1);
 	for (uint32_t i = 0; i < segment->nsects; i++) {
 		if (0 != strncmp(ctx->segment, sections[i].segname,  sizeof(sections[i].segname ))) { continue; }
@@ -296,9 +322,28 @@ static void dumpSymbol(Buffer buffer, const char* filename, const char* segmentN
 	if (file != stdout) { fclose(file); }
 }
 
+static void listSections(Buffer full, Buffer buffer) {
+	if (!full.inBounds(buffer.data) || !full.endInBounds(buffer.offsetPtr<void>(buffer.size))) {
+		fprintf(stderr, "List sections buffer out of bounds\n");
+		return;
+	}
+	uint64_t baseOffset = static_cast<char*>(buffer.data) - static_cast<char*>(full.data);
+	LoadCommandIterator iter(buffer);
+	while (load_command* lc = iter.next()) {
+		segment_command_64* segment = getSegmentCommand(lc);
+		if (!segment) { continue; }
+		section_64* sections = reinterpret_cast<section_64*>(segment + 1);
+		for (uint32_t i = 0; i < segment->nsects; i++) {
+			uint64_t offset = sections[i].offset + baseOffset;
+			printf("%lld %lld %.16s,%.16s\n", offset, sections[i].size, sections[i].segname, sections[i].sectname);
+		}
+	}
+}
+
 enum Options {
 	OPTION_NAMED_SHADER = 128,
 	OPTION_OUTPUT,
+	OPTION_LIST_SECTIONS,
 };
 
 static constexpr option longOpts[] = {
@@ -309,6 +354,7 @@ static constexpr option longOpts[] = {
 	{"extract-prolog-shader",  required_argument, nullptr, 'p'},
 	{"extract-main-shader",    required_argument, nullptr, 'm'},
 	{"list-shaders",           no_argument,       nullptr, 'l'},
+	{"list-sections",          no_argument,       nullptr, OPTION_LIST_SECTIONS},
 	{"extract-named-shader",   required_argument, nullptr, OPTION_NAMED_SHADER},
 	{"output",                 required_argument, nullptr, OPTION_OUTPUT},
 	{nullptr, 0, nullptr, 0}
@@ -327,6 +373,7 @@ int main(int argc, char* argv[]) {
 	const char* extract_name = nullptr;
 	const char* other_out = nullptr;
 	bool cmd_list = false;
+	bool list_sections = false;
 	int c;
 	while ((c = getopt_long(argc, argv, "v:f:c:d:p:m:l", longOpts, nullptr)) > 0) {
 		switch (c) {
@@ -356,6 +403,9 @@ int main(int argc, char* argv[]) {
 				break;
 			case OPTION_OUTPUT:
 				other_out = optarg;
+				break;
+			case OPTION_LIST_SECTIONS:
+				list_sections = true;
 				break;
 			case '?':
 				if (!optopt) {
@@ -395,7 +445,9 @@ int main(int argc, char* argv[]) {
 
 	Buffer gpu = findGPU(buffer);
 	if (!gpu) { return EXIT_FAILURE; }
-	if (cmd_list) {
+	if (list_sections) {
+		listSections(buffer, gpu);
+	} else if (cmd_list) {
 		for (GPUFunction symbol : findAllSymbols(gpu, "__TEXT", "__text"))
 			printf("0x%llx %s\n", symbol.offset, symbol.name);
 	} else if (extract_section) {

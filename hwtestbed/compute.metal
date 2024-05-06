@@ -5,6 +5,7 @@ kernel void
 add_arrays(
 	uint3 index [[thread_position_in_grid]],
 	uint3 tpg [[threads_per_grid]],
+	uint sgidx [[thread_index_in_simdgroup]],
 	device uint4 *output0 [[buffer(0)]],
 	device uint4 *output1 [[buffer(1)]],
 	device uint4 *output2 [[buffer(2)]],
@@ -37,5 +38,5 @@ add_arrays(
 	output4[index.x] = q;
 	output5[index.x] = r;
 	output6[index.x] = uint4(6, tpg.x, tpg.y, 16);
-	output7[index.x] = uint4(7, tpg.z, outputp, 17);
+	output7[index.x] = uint4(7, tpg.z, outputp, sgidx);
 }
