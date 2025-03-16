@@ -1493,6 +1493,21 @@ class Reg32Desc(FieldDesc):
 		else:
 			raise Exception('invalid Reg32Desc %r' % (opstr,))
 
+@document_operand
+class UReg64Desc(FieldDesc):
+	pseudocode = '''
+	{name}(value):
+		return UReg64Reference(value)
+	'''
+	def decode(self, fields):
+		return UReg64(fields[self.name])
+
+	def encode_string(self, fields, opstr):
+		reg = try_parse_register(opstr)
+		if reg and isinstance(reg, UReg64):
+			fields[self.name] = reg.n
+		else:
+			raise Exception('invalid UReg64Desc %r' % (opstr,))
 
 class EnumDesc(FieldDesc):
 	documentation_skip = True
@@ -4772,6 +4787,40 @@ class StoreToUniformInstructionDesc(InstructionDesc):
 		# memory index is ureg16 number - e.g. r6l = 12
 		self.add_operand(MemoryIndexDesc('O'))
 		self.add_operand(MemoryShiftDesc('s'))
+
+class TextureStateDestDesc(OperandDesc):
+	def __init__(self, name, off=8):
+		super().__init__(name)
+		self.add_field(off, 7, self.name)
+
+	def decode(self, fields):
+		return TextureState(fields[self.name])
+
+	def encode_string(self, fields, opstr):
+		r = try_parse_register(opstr)
+		if isinstance(r, TextureState):
+			value = r.n
+			flags = 0
+		else:
+			raise Exception('invalid TextureStateDestDesc %r' % (opstr,))
+
+		fields[self.name] = value
+
+@register
+class StoreToTextureStateInstructionDesc(InstructionDesc):
+	documentation_html = '''
+	<p>
+	<code>tex_state_store</code> is used to initialize texture state registers.
+	The 24-byte texture or PBE descriptor at <code>B + O</code> is stored into texture state register <code>TS</code>.
+	</p>
+	'''
+	def __init__(self):
+		super().__init__('tex_state_store', size=8)
+		self.add_constant(0, 8, 0b11101101)
+		self.add_constant(20, 1, 1)
+		self.add_operand(TextureStateDestDesc('TS'))
+		self.add_operand(UReg64Desc('B', 58, 6))
+		self.add_operand(Reg32Desc('O', 27, 7))
 
 for op, mnem in [
 	(0b01010001, 'no_var'),
