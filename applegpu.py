@@ -4822,6 +4822,40 @@ class StoreToTextureStateInstructionDesc(InstructionDesc):
 		self.add_operand(UReg64Desc('B', 58, 6))
 		self.add_operand(Reg32Desc('O', 27, 7))
 
+class SamplerStateDestDesc(OperandDesc):
+	def __init__(self, name, off=8):
+		super().__init__(name)
+		self.add_field(off, 5, self.name)
+
+	def decode(self, fields):
+		return SamplerState(fields[self.name])
+
+	def encode_string(self, fields, opstr):
+		r = try_parse_register(opstr)
+		if isinstance(r, SamplerState):
+			value = r.n
+			flags = 0
+		else:
+			raise Exception('invalid TextureStateDestDesc %r' % (opstr,))
+
+		fields[self.name] = value
+
+@register
+class StoreToSamplerStateInstructionDesc(InstructionDesc):
+	documentation_html = '''
+	<p>
+	<code>sampler_state_store</code> is used to initialize sampler state registers.
+	The sampler descriptor at <code>B + O</code> is stored into sampler state register <code>SS</code>.
+	</p>
+	'''
+	def __init__(self):
+		super().__init__('sampler_state_store', size=8)
+		self.add_constant(0, 8, 0b10101101)
+		self.add_constant(20, 1, 1)
+		self.add_operand(SamplerStateDestDesc('SS'))
+		self.add_operand(UReg64Desc('B', 58, 6))
+		self.add_operand(Reg32Desc('O', 27, 7))
+
 for op, mnem in [
 	(0b01010001, 'no_var'),
 	(0b00010001, 'st_var'),
