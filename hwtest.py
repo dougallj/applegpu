@@ -214,7 +214,15 @@ def test_madd():
 								n = desc.patch_fields(n, {'D': D, 'A': a << 1, 'B': b << 1, 'C': c << 1, 's': shift})
 								run_test(desc.to_bytes(n), RANDOM_INITIAL_STATE)
 
+DOUBLE_ROUND_INITIAL_STATE = [
+	[0x3f800000, 0x3f800001, 0x3f800001, 0x3f800800, 0x3f800000, 0x3f800001, 0x3f800001, 0x3f802100, 0x3f801000, 0x3f801000, 0x3f808000, 0x3f808000, 0x3e00, 0x340c] + [0] * 18,
+	[0x3f802fff, 0x3fc02ffe, 0x3fc00fff, 0x3f800800, 0x3f817fff, 0x3fc17ffe, 0x3fc07fff, 0x3ff84000, 0x3f800000, 0x3f800000, 0x3f800000, 0x3f800000, 0x7801, 0x7800] + [0] * 18,
+	[0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x33800000, 0x33800001, 0x33800000, 0x33800001, 0x8400, 0x8400] + [0] * 18,
+] + [[0] * 32] * 5
+
 def test_fmadd():
+	run_test(bytes.fromhex('3a8c402224440200'), DOUBLE_ROUND_INITIAL_STATE) # fmadd32 r3l, r0, r1, r2
+	run_test(bytes.fromhex('3a0c40200444'),     DOUBLE_ROUND_INITIAL_STATE) # fmadd32 r3l, r0l, r1l, r2l
 	n = applegpu.opcode_to_number(bytes.fromhex('3aad5ca2255e0200'))
 	desc = applegpu.get_instruction_descriptor(n)
 	assert desc.decode_remainder(n) == 0, hex(desc.decode_remainder(n))
@@ -238,6 +246,7 @@ def test_fmadd():
 
 
 def test_fadd():
+	run_test(bytes.fromhex('2a8c40422400'), DOUBLE_ROUND_INITIAL_STATE) # fadd32 r3l, r0, r2
 	n = applegpu.opcode_to_number(bytes.fromhex('2aad5ec22500'))
 	desc = applegpu.get_instruction_descriptor(n)
 	assert desc.decode_remainder(n) == 0, hex(desc.decode_remainder(n))
@@ -259,6 +268,7 @@ def test_fadd():
 							run_test(desc.to_bytes(n), RANDOM_INITIAL_STATE)
 
 def test_fmul():
+	run_test(bytes.fromhex('1a8c40222400'), DOUBLE_ROUND_INITIAL_STATE) # fmul32 r3l, r0, r1
 	n = applegpu.opcode_to_number(bytes.fromhex('1aad5ec22500'))
 	desc = applegpu.get_instruction_descriptor(n)
 	assert desc.decode_remainder(n) == 0, hex(desc.decode_remainder(n))
@@ -280,6 +290,7 @@ def test_fmul():
 							run_test(desc.to_bytes(n), RANDOM_INITIAL_STATE)
 
 def test_fmadd16():
+	run_test(bytes.fromhex('360c40200444'), DOUBLE_ROUND_INITIAL_STATE) # fmadd16 r3l, r0l, r1l, r2l
 	n = applegpu.opcode_to_number(bytes.fromhex('362c5dc0055e'))
 	desc = applegpu.get_instruction_descriptor(n)
 	assert desc.decode_remainder(n) == 0, hex(desc.decode_remainder(n))
