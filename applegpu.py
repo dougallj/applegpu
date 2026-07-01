@@ -3240,6 +3240,7 @@ class FMAdd32InstructionDesc(FSaturatableInstructionDesc):
 		c64 = self.operands['C'].evaluate_thread_float(fields, corestate, thread)
 
 		result64 = fma.bfma64(a64, b64, c64, rounding=fma.ROUND_TO_ODD)
+		result64 = fma.f32_to_f64(fma.f64_to_f32(result64, ftz=True))
 
 		self.saturate_and_set_thread_result(fields, corestate, thread, result64)
 
@@ -3316,6 +3317,7 @@ class FAdd32InstructionDesc(FBinaryInstructionDesc):
 		b64 = self.operands['B'].evaluate_thread_float(fields, corestate, thread)
 
 		result64 = fma.bfma64(a64, fma.F64_ONE, b64, rounding=fma.ROUND_TO_ODD)
+		result64 = fma.f32_to_f64(fma.f64_to_f32(result64, ftz=True))
 
 		self.saturate_and_set_thread_result(fields, corestate, thread, result64)
 
@@ -3363,6 +3365,7 @@ class FMul32InstructionDesc(FBinaryInstructionDesc):
 		b64 = self.operands['B'].evaluate_thread_float(fields, corestate, thread)
 
 		result64 = fma.bfma64(a64, b64, 0, rounding=fma.ROUND_TO_ODD)
+		result64 = fma.f32_to_f64(fma.f64_to_f32(result64, ftz=True))
 
 		self.saturate_and_set_thread_result(fields, corestate, thread, result64)
 
