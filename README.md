@@ -5,9 +5,71 @@ This is a project working on reverse engineering the Apple G13 GPU architecture 
 Documentation can be viewed at https://dougallj.github.io/applegpu/docs.html
 
 
+## Compiler Explorer
+
+Allows you to easily compile, extract, and disassemble shaders:
+
+```
+$ python3 compiler_explorer.py msl_code.metal
+compute shader:
+   0: 72111004             get_sr           r4, sr80 (thread_position_in_grid.x)
+   4: 0501840e00c8f200     device_load      0, i32, xyzw, r0_r1_r2_r3, u2_u3, r4, unsigned, lsl 2
+   c: 0529880e00c8f200     device_load      0, i32, xyzw, r5_r6_r7_r8, u4_u5, r4, unsigned, lsl 2
+  14: 3800                 wait             0
+  16: 0e01ca022c000000     iadd             r0, r5.discard, r0.discard
+  1e: 0e05cc222c000000     iadd             r1, r6.discard, r1.discard
+  26: 0e09ce422c000000     iadd             r2, r7.discard, r2.discard
+  2e: 0e0dd0622c000000     iadd             r3, r8.discard, r3.discard
+  36: 4501800e00c8f200     device_store     0, i32, xyzw, r0_r1_r2_r3, u0_u1, r4, unsigned, lsl 2, 0
+  3e: 8800                 stop
+```
+
+It can also accept shaders from stdin if you want to be extra lazy:
+```
+$ pbpaste | python3 compiler_explorer.py -
+```
+
+If you're not on an M1, compiler_explorer.py also accepts compiled binaries, which you can create with metal-tt.  First, make a `.mtlp-json` file for your pipeline:
+
+<details>
+<summary>For a Compute Pipeline</summary>
+
+```json
+{
+	"pipelines": {
+		"compute_pipelines": [{ "compute_function": "<name of kernel function>" }]
+	}
+}
+```
+</details>
+<details>
+<summary>For a Render Pipeline</summary>
+
+```json
+{
+	"pipelines": {
+		"render_pipelines": [
+			{
+				"vertex_function": "<name of vertex function>",
+				"fragment_function": "<name of fragment function>",
+				"color_attachments": [{"pixel_format": "RGBA8Unorm"}]
+			}
+		]
+	}
+}
+```
+</details>
+
+Then, compile and disassemble:
+```
+$ xcrun metal msl_code.metal -o test.metallib
+$ xcrun metal-tt -arch applegpu_g13g -o test.bin test.mtlp-json test.metallib
+$ python3 compiler_explorer.py test.bin
+```
+
 ## Disassembler
 
-This is probably the most useful bit, still an early work in progress:
+For disassembling raw instruction bytes that aren't wrapped in any of Apple's file formats:
 
 ```
 $ python3 disassemble.py code.bin
